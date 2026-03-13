@@ -36,7 +36,11 @@ export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, on
   const setupDataChannel = useCallback((dc) => {
     dc.binaryType = 'arraybuffer';
 
-    dc.onopen = () => onConnected?.();
+    if (dc.readyState === 'open') {
+      onConnected?.();
+    } else {
+      dc.onopen = () => onConnected?.();
+    }
 
     dc.onmessage = async ({ data }) => {
       if (typeof data === 'string') {

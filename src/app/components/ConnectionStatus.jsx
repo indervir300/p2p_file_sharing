@@ -1,8 +1,8 @@
 'use client';
 
-export default function ConnectionStatus({ wsState, encrypted, connectionType }) {
+export default function ConnectionStatus({ wsState, encrypted }) {
   const wsLabel =
-    wsState === 'connected' ? 'Signaling Online' :
+    wsState === 'connected' ? 'Online' :
     wsState === 'connecting' ? 'Connecting...' : 'Disconnected';
 
   const wsColor =
@@ -24,13 +24,6 @@ export default function ConnectionStatus({ wsState, encrypted, connectionType })
             <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"/>
           </svg>
           <span>End-to-End Encrypted</span>
-        </div>
-      )}
-
-      {/* Connection type */}
-      {connectionType && (
-        <div className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-slate-700">
-          <span>{connectionType.relayed ? 'Relayed TURN' : 'Direct P2P'}</span>
         </div>
       )}
     </div>

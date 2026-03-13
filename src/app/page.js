@@ -32,7 +32,7 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
     : 'bg-white border border-slate-200 text-slate-800';
 
   return (
-    <div className={`w-64 rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
+    <div className={`w-64 sm:w-72 max-w-[80vw] rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
 
       {/* ── Image ── */}
       {isImg && previewUrl && (
@@ -494,37 +494,35 @@ export default function Home() {
         <div className="flex h-screen flex-col">
 
           {/* ── Header bar ── */}
-          <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <button
-              onClick={reset}
-              className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-            >
-              ← Leave
-            </button>
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <button
+                onClick={reset}
+                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors sm:px-3"
+              >
+                ← Leave
+              </button>
 
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                P2P Chat{sessionCode ? ` · room ${sessionCode}` : ''}
-              </p>
-              <p className="text-[11px] text-slate-400">
-                {connectionType
-                  ? (connectionType.relayed ? '🔀 Relayed (TURN)' : '⚡ Direct (P2P)')
-                  : '🌐 Establishing…'}
-                {' · '}🔒 E2E Encrypted
-              </p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">
+                  {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
+                </p>
+                <p className="text-[10px] text-slate-400 sm:text-[11px]">
+                  🔒 E2E Encrypted
+                </p>
+              </div>
             </div>
 
             <div className="shrink-0">
               <ConnectionStatus
                 wsState={wsState}
                 encrypted={!!cryptoKeyRef.current}
-                connectionType={connectionType}
               />
             </div>
           </header>
 
           {/* ── Messages scroll area ── */}
-          <div className="flex-1 overflow-y-auto px-4 py-5 space-y-2">
+          <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 sm:px-4 sm:py-5">
             {messages.length === 0 && (
               <p className="mt-12 text-center text-xs text-slate-400">
                 Say hi, or tap the paperclip to send a file 📎
@@ -546,7 +544,7 @@ export default function Home() {
               const isMine = msg.sender === 'me';
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className="max-w-[75%] min-w-0">
+                  <div className="max-w-[85%] sm:max-w-[75%] min-w-0">
 
                     {/* Text bubble */}
                     {msg.type === 'text' && (
@@ -594,16 +592,16 @@ export default function Home() {
           )}
 
           {/* ── Input bar ── */}
-          <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
-            <div className="flex items-end gap-2">
+          <div className="shrink-0 border-t border-slate-200 bg-white px-2 py-2 sm:px-4 sm:py-3">
+            <div className="flex items-end gap-1.5 sm:gap-2">
 
               {/* Attach files */}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach files"
-                className="shrink-0 rounded-xl border border-slate-300 bg-white p-2.5 text-slate-500 hover:bg-slate-100 transition-colors"
+                className="shrink-0 rounded-xl border border-slate-300 bg-white p-2 sm:p-2.5 text-slate-500 hover:bg-slate-100 transition-colors"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                 </svg>
@@ -629,9 +627,9 @@ export default function Home() {
                     handleSendText();
                   }
                 }}
-                placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+                placeholder="Message…"
                 rows={1}
-                className="flex-1 resize-none rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition-colors"
+                className="flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition-colors"
                 style={{ maxHeight: '120px', overflowY: 'auto' }}
               />
 
@@ -640,9 +638,9 @@ export default function Home() {
                 onClick={handleSendText}
                 disabled={!chatInput.trim()}
                 title="Send message"
-                className="shrink-0 rounded-xl bg-slate-900 p-2.5 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="shrink-0 rounded-xl bg-slate-900 p-2 sm:p-2.5 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
               </button>
@@ -670,7 +668,6 @@ export default function Home() {
               <ConnectionStatus
                 wsState={wsState}
                 encrypted={!!cryptoKeyRef.current}
-                connectionType={connectionType}
               />
             </div>
 
