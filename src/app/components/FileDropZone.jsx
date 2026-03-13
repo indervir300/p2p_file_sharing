@@ -33,15 +33,15 @@ function getFileIcon(file) {
   return FILE_ICONS.default;
 }
 
-export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
+export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && !disabled) onFileSelect(file);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0 && !disabled) onFilesSelect(files);
   };
 
   if (selectedFile) {
@@ -70,14 +70,19 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
       <input
         ref={inputRef}
         type="file"
+        multiple
         className="hidden"
-        onChange={(e) => e.target.files[0] && onFileSelect(e.target.files[0])}
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          if (files.length > 0) onFilesSelect(files);
+          e.target.value = '';
+        }}
       />
       <div className={`text-4xl mb-3 transition-transform duration-300 ${dragging ? 'scale-110' : ''}`}>
         {dragging ? 'Drop' : 'File'}
       </div>
       <p className="font-medium text-slate-800">
-        {dragging ? 'Release to upload' : 'Drop a file here or click to browse'}
+        {dragging ? 'Release to add files' : 'Drop files here or click to browse'}
       </p>
       <p className="mt-1 text-sm text-slate-500">All file types supported</p>
     </div>

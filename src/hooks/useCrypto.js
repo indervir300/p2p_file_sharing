@@ -41,6 +41,43 @@ export async function importKey(base64url) {
   );
 }
 
+/**
+ * Derive a stable AES-256-GCM key from a shared secret string.
+ * This removes the need to copy/paste raw key material between peers.
+ */
+export async function deriveKeyFromSecret(secret) {
+  if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+    throw new Error('Web Crypto API not available');
+  }
+  if (!secret || typeof secret !== 'string') {
+    throw new Error('Missing shared secret');
+  }
+
+  const encoder = new TextEncoder();
+  const normalizedSecret = secret.trim().toUpperCase();
+
+  const keyMaterial = await window.crypto.subtle.importKey(
+    'raw',
+    encoder.encode(normalizedSecret),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+
+  return window.crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode('p2p-fileshare-v1'),
+      iterations: 150000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
 /** Encrypt an ArrayBuffer chunk → returns ArrayBuffer (IV prepended) */
 export async function encryptChunk(key, data) {
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {

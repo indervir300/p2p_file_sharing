@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSignaling } from '@/hooks/useSignaling';
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { generateKey, exportKey, importKey, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
+import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 import SessionCode from '@/app/components/SessionCode';
 import FileDropZone from '@/app/components/FileDropZone';
 import ProgressBar from '@/app/components/ProgressBar';
@@ -12,16 +12,24 @@ export default function Home() {
   const [mode, setMode] = useState(null);           // 'send' | 'receive'
   const [sessionCode, setSessionCode] = useState('');
   const [roomToken, setRoomToken] = useState('');
-  const [encKeyString, setEncKeyString] = useState('');
   const [status, setStatus] = useState('idle');     // idle | waiting | connected | transferring | done | error
   const [progress, setProgress] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [receivedFile, setReceivedFile] = useState(null);
+  const [sendQueue, setSendQueue] = useState([]);
+  const [sendHistory, setSendHistory] = useState([]);
+  const [receivedQueue, setReceivedQueue] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [connectionType, setConnectionType] = useState(null);
 
   const cryptoKeyRef = useRef(null);
   const autoJoinHandled = useRef(false);
+  const pendingFilesRef = useRef([]);
+  const sendingLoopRunning = useRef(false);
+
+  const setupDerivedKey = useCallback(async (secret) => {
+    const key = await deriveKeyFromSecret(secret);
+    cryptoKeyRef.current = key;
+  }, []);
 
   // ── Encryption wrappers ─────────────────────────────────────────────
   const encryptFn = useCallback(async (data) => {
@@ -44,6 +52,10 @@ export default function Home() {
         setRoomToken(msg.payload.token || '');
         setStatus('waiting');
         setErrorMsg('');
+        setupDerivedKey(msg.payload.code).catch(() => {
+          setStatus('error');
+          setErrorMsg('Could not initialize encryption key. Please retry.');
+        });
         break;
       case 'joined':
         setStatus('waiting');
@@ -65,6 +77,8 @@ export default function Home() {
         setStatus('waiting');
         setProgress(null);
         setSelectedFile(null);
+        pendingFilesRef.current = [];
+        setSendQueue([]);
         setErrorMsg('Peer disconnected. Room is available for a new connection.');
         break;
       case 'left':
@@ -91,8 +105,14 @@ export default function Home() {
       }, 2000);
     },
     onFileReceived: ({ blob, name, size }) => {
-      setReceivedFile({ blob, name, size });
-      setStatus('done');
+      setReceivedQueue((prev) => [...prev, {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        blob,
+        name,
+        size,
+      }]);
+      setStatus('connected');
+      setProgress(null);
     },
     onTransferError: (message) => {
       setStatus('error');
@@ -109,49 +129,30 @@ export default function Home() {
 
     const params = new URLSearchParams(window.location.search);
     const joinToken = params.get('join');
-    const hashKey = window.location.hash.slice(1); // Remove the #
+    const codeFromUrl = params.get('code');
 
     if (joinToken) {
       autoJoinHandled.current = true;
       setMode('receive');
 
-      // Import encryption key from URL hash
-      if (hashKey) {
-        importKey(hashKey).then((key) => {
-          cryptoKeyRef.current = key;
-          setEncKeyString(hashKey);
-          send({ type: 'join', payload: { token: joinToken } });
-        }).catch(() => {
-          setStatus('error');
-          setErrorMsg('Invalid private link key. Ask sender to generate a new link.');
-        });
-      } else {
+      const sharedSecret = codeFromUrl || joinToken;
+      setupDerivedKey(sharedSecret).then(() => {
+        send({ type: 'join', payload: { token: joinToken } });
+      }).catch(() => {
         setStatus('error');
-        setErrorMsg('Private link is missing encryption key. Ask sender for a fresh link.');
-      }
+        setErrorMsg('Could not initialize secure join. Please request a new link.');
+      });
 
       // Clean URL without reloading
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [wsState, send]);
+  }, [wsState, send, setupDerivedKey]);
 
   // ── Actions ─────────────────────────────────────────────────────────
   const startSend = async () => {
-    try {
-      setErrorMsg('');
-      // Generate encryption key
-      const key = await generateKey();
-      cryptoKeyRef.current = key;
-      const keyStr = await exportKey(key);
-      setEncKeyString(keyStr);
-      
-      setMode('send');
-      send({ type: 'create' });
-    } catch (e) {
-      console.error(e);
-      setErrorMsg('Error: End-to-End Encryption requires a secure connection (localhost or HTTPS). Please access the app via http://localhost:3000 instead of your IP address, or deploy it to Vercel (HTTPS).');
-      setStatus('error');
-    }
+    setErrorMsg('');
+    setMode('send');
+    send({ type: 'create' });
   };
 
   const startReceive = () => {
@@ -160,43 +161,89 @@ export default function Home() {
     setStatus('idle');
   };
 
-  const joinRoom = async ({ code, keyString }) => {
+  const joinRoom = async (code) => {
     setErrorMsg('');
 
-    if (!keyString) {
-      setStatus('error');
-      setErrorMsg('Encryption key is required for code-based join. Use private link or paste the key.');
-      return;
-    }
-
     try {
-      const importedKey = await importKey(keyString);
-      cryptoKeyRef.current = importedKey;
-      setEncKeyString(keyString);
+      await setupDerivedKey(code);
       send({ type: 'join', payload: { code } });
     } catch {
       setStatus('error');
-      setErrorMsg('Invalid encryption key format.');
+      setErrorMsg('Could not initialize secure connection for this room code.');
     }
   };
 
-  const handleFileSelect = async (file) => {
-    setSelectedFile(file);
+  const runSendLoop = useCallback(async () => {
+    if (sendingLoopRunning.current) return;
+    if (status !== 'connected') return;
+    if (pendingFilesRef.current.length === 0) return;
+
+    sendingLoopRunning.current = true;
+    setErrorMsg('');
+
+    try {
+      while (pendingFilesRef.current.length > 0) {
+        const nextFile = pendingFilesRef.current[0];
+        setSelectedFile(nextFile);
+        setStatus('transferring');
+        await sendFile(nextFile);
+
+        pendingFilesRef.current.shift();
+        setSendQueue([...pendingFilesRef.current]);
+        setSendHistory((prev) => [...prev, {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name: nextFile.name,
+          size: nextFile.size,
+        }]);
+      }
+    } finally {
+      sendingLoopRunning.current = false;
+      setSelectedFile(null);
+      setProgress(null);
+      setStatus('connected');
+    }
+  }, [status, sendFile]);
+
+  useEffect(() => {
+    if (status === 'connected' && pendingFilesRef.current.length > 0) {
+      runSendLoop();
+    }
+  }, [status, runSendLoop]);
+
+  const handleFilesSelect = (files) => {
+    if (!files?.length) return;
+    const validFiles = files.filter(Boolean);
+    if (!validFiles.length) return;
+
+    pendingFilesRef.current = [...pendingFilesRef.current, ...validFiles];
+    setSendQueue([...pendingFilesRef.current]);
+
     if (status === 'connected') {
-      setStatus('transferring');
-      await sendFile(file);
-      setStatus('done');
+      runSendLoop();
     }
   };
 
-  const downloadFile = () => {
-    if (!receivedFile) return;
-    const url = URL.createObjectURL(receivedFile.blob);
+  const downloadFile = (fileItem) => {
+    if (!fileItem) return;
+    const url = URL.createObjectURL(fileItem.blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = receivedFile.name;
+    a.download = fileItem.name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+
+  const downloadAllFiles = () => {
+    receivedQueue.forEach((fileItem, index) => {
+      setTimeout(() => downloadFile(fileItem), index * 250);
+    });
+  };
+
+  const backToRoom = () => {
+    setProgress(null);
+    setSelectedFile(null);
+    setErrorMsg('');
+    setStatus('connected');
   };
 
   const leaveRoom = useCallback(() => {
@@ -210,10 +257,12 @@ export default function Home() {
     setStatus('idle');
     setSessionCode('');
     setRoomToken('');
-    setEncKeyString('');
     setProgress(null);
     setSelectedFile(null);
-    setReceivedFile(null);
+    pendingFilesRef.current = [];
+    setSendQueue([]);
+    setSendHistory([]);
+    setReceivedQueue([]);
     setErrorMsg('');
     setConnectionType(null);
     cryptoKeyRef.current = null;
@@ -266,30 +315,53 @@ export default function Home() {
 
         {mode === 'send' && (
           <div className="space-y-6" style={{ animation: 'slideUp 0.4s ease-out' }}>
-            <SessionCode mode="send" code={sessionCode} token={roomToken} encryptionKey={encKeyString} />
+            <SessionCode mode="send" code={sessionCode} token={roomToken} />
 
-            {status === 'connected' && !selectedFile && (
+            {(status === 'connected' || status === 'transferring') && (
               <div>
-                <p className="mb-4 text-center text-sm text-emerald-700">Receiver connected. Select a file to send.</p>
-                <FileDropZone onFileSelect={handleFileSelect} disabled={false} />
-              </div>
-            )}
+                <p className="mb-4 text-center text-sm text-emerald-700">Receiver connected. Add one or multiple files.</p>
+                <FileDropZone onFilesSelect={handleFilesSelect} disabled={status === 'transferring'} selectedFile={selectedFile} />
 
-            {status === 'transferring' && selectedFile && (
-              <div>
-                <FileDropZone selectedFile={selectedFile} disabled={true} />
-                <div className="mt-4">
-                  <ProgressBar progress={progress} />
-                </div>
-              </div>
-            )}
-
-            {status === 'done' && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center" style={{ animation: 'scaleIn 0.25s ease-out' }}>
-                <p className="text-lg font-semibold text-emerald-700">Transfer complete</p>
-                {selectedFile && (
-                  <p className="mt-1 text-sm text-emerald-700/80">{selectedFile.name} • {formatSize(selectedFile.size)}</p>
+                {sendQueue.length > 0 && (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pending Queue ({sendQueue.length})</p>
+                    <div className="space-y-1">
+                      {sendQueue.slice(0, 6).map((file, idx) => (
+                        <p key={`${file.name}-${idx}`} className="truncate text-sm text-slate-700">{file.name}</p>
+                      ))}
+                      {sendQueue.length > 6 && (
+                        <p className="text-xs text-slate-500">+ {sendQueue.length - 6} more</p>
+                      )}
+                    </div>
+                  </div>
                 )}
+              </div>
+            )}
+
+            {status === 'transferring' && (
+              <div className="mt-4">
+                <ProgressBar progress={progress} />
+              </div>
+            )}
+
+            {sendHistory.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sent Files ({sendHistory.length})</p>
+                  <button
+                    onClick={backToRoom}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    Back To Room
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {sendHistory.slice(-8).reverse().map((file) => (
+                    <p key={file.id} className="truncate text-sm text-slate-700">
+                      {file.name} • {formatSize(file.size)}
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -306,8 +378,40 @@ export default function Home() {
             )}
 
             {status === 'connected' && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-7 text-center" style={{ animation: 'fadeIn 0.25s ease-out' }}>
-                <p className="font-medium text-emerald-700">Connected. Waiting for file data.</p>
+              <div className="space-y-4" style={{ animation: 'fadeIn 0.25s ease-out' }}>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center">
+                  <p className="font-medium text-emerald-700">Connected. Waiting for files.</p>
+                </div>
+
+                {receivedQueue.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Download Queue ({receivedQueue.length})</p>
+                      <button
+                        onClick={downloadAllFiles}
+                        className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                      >
+                        Download All
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {receivedQueue.slice().reverse().map((file) => (
+                        <div key={file.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>
+                            <p className="text-xs text-slate-500">{formatSize(file.size)}</p>
+                          </div>
+                          <button
+                            onClick={() => downloadFile(file)}
+                            className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                          >
+                            Download
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -317,24 +421,6 @@ export default function Home() {
                   <p className="font-medium text-slate-800">Receiving file</p>
                 </div>
                 <ProgressBar progress={progress} />
-              </div>
-            )}
-
-            {status === 'done' && receivedFile && (
-              <div className="space-y-5 text-center" style={{ animation: 'scaleIn 0.3s ease-out' }}>
-                <div className="inline-block rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
-                  <p className="font-medium text-slate-900">{receivedFile.name}</p>
-                  <p className="text-sm text-slate-500">{formatSize(receivedFile.size)}</p>
-                </div>
-                <div>
-                  <button
-                    onClick={downloadFile}
-                    id="btn-download"
-                    className="rounded-xl bg-slate-900 px-8 py-3.5 font-semibold text-white transition-colors hover:bg-slate-700"
-                  >
-                    Download File
-                  </button>
-                </div>
               </div>
             )}
           </div>
