@@ -39,7 +39,7 @@ export default function ProgressBar({ progress }) {
           className="h-3 rounded-full transition-all duration-300 relative overflow-hidden"
           style={{
             width: `${percent}%`,
-            background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa)',
+            background: 'linear-gradient(90deg, #0ea5e9, #06b6d4, #14b8a6)',
           }}
         >
           {/* Shimmer effect */}
@@ -55,7 +55,7 @@ export default function ProgressBar({ progress }) {
 
       {/* Speed & ETA */}
       <div className="flex justify-between text-xs text-slate-500">
-        <span>{speed > 0 ? `⚡ ${formatSpeed(speed)}` : ''}</span>
+        <span>{speed > 0 ? `${formatSpeed(speed)}` : ''}</span>
         <span>{speed > 0 && percent < 100 ? `~${etaLabel} remaining` : ''}</span>
       </div>
     </div>

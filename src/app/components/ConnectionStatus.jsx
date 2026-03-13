@@ -2,7 +2,7 @@
 
 export default function ConnectionStatus({ wsState, encrypted, connectionType }) {
   const wsLabel =
-    wsState === 'connected' ? 'Server Connected' :
+    wsState === 'connected' ? 'Signaling Online' :
     wsState === 'connecting' ? 'Connecting...' : 'Disconnected';
 
   const wsColor =
@@ -10,28 +10,27 @@ export default function ConnectionStatus({ wsState, encrypted, connectionType })
     wsState === 'connecting' ? 'bg-amber-500 animate-pulse' : 'bg-red-500';
 
   return (
-    <div className="flex items-center justify-center gap-4 text-xs text-slate-400 flex-wrap">
+    <div className="flex items-center justify-center gap-3 text-xs text-slate-400 flex-wrap">
       {/* WebSocket status */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
         <span className={`w-2 h-2 rounded-full ${wsColor}`} />
-        <span>{wsLabel}</span>
+        <span className="text-slate-200">{wsLabel}</span>
       </div>
 
       {/* Encryption status */}
       {encrypted && (
-        <div className="flex items-center gap-1.5 text-emerald-400">
+        <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-emerald-300">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"/>
           </svg>
-          <span>E2E Encrypted</span>
+          <span>End-to-End Encrypted</span>
         </div>
       )}
 
       {/* Connection type */}
       {connectionType && (
-        <div className="flex items-center gap-1.5">
-          <span>{connectionType.relayed ? '🔄' : '⚡'}</span>
-          <span>{connectionType.relayed ? 'Relayed' : 'Direct P2P'}</span>
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+          <span>{connectionType.relayed ? 'Relayed TURN' : 'Direct P2P'}</span>
         </div>
       )}
     </div>

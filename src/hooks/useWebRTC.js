@@ -31,6 +31,7 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
   const recvSize = useRef(0);
   const fileMeta = useRef(null);
   const startTime = useRef(null);
+  const sendingRef = useRef(false);
 
   const setupDataChannel = useCallback((dc) => {
     dc.binaryType = 'arraybuffer';
@@ -39,40 +40,63 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
 
     dc.onmessage = async ({ data }) => {
       if (typeof data === 'string') {
-        // First message = file metadata JSON
-        fileMeta.current = JSON.parse(data);
-        recvBuffers.current = [];
-        recvSize.current = 0;
-        startTime.current = Date.now();
+        let message;
+        try {
+          message = JSON.parse(data);
+        } catch {
+          return;
+        }
+
+        if (message.kind === 'meta') {
+          fileMeta.current = {
+            name: message.name,
+            size: message.size,
+            type: message.type,
+            encrypted: !!message.encrypted,
+          };
+          recvBuffers.current = [];
+          recvSize.current = 0;
+          startTime.current = Date.now();
+          return;
+        }
+
+        if (message.kind === 'done') {
+          const meta = fileMeta.current;
+          if (!meta) return;
+
+          const blob = new Blob(recvBuffers.current, { type: meta.type || 'application/octet-stream' });
+          onProgress?.({ percent: 100, speed: 0, received: meta.size, total: meta.size });
+          onFileReceived?.({ blob, name: meta.name, size: meta.size });
+
+          recvBuffers.current = [];
+          recvSize.current = 0;
+          fileMeta.current = null;
+        }
       } else {
+        const meta = fileMeta.current;
+        if (!meta) return;
+
         // Decrypt chunk if encryption is enabled
         let chunk = data;
-        if (decryptChunk) {
+        if (meta.encrypted) {
+          if (!decryptChunk) {
+            return;
+          }
           try {
             chunk = await decryptChunk(data);
           } catch {
-            // If decryption fails, use raw data (non-encrypted transfer)
-            chunk = data;
+            // Abort this chunk to avoid silently producing corrupted files.
+            return;
           }
         }
 
         recvBuffers.current.push(chunk);
         recvSize.current += chunk.byteLength;
-        const meta = fileMeta.current;
-        if (meta) {
-          const percent = Math.min(100, Math.round((recvSize.current / meta.size) * 100));
-          const elapsed = (Date.now() - startTime.current) / 1000;
-          const speed = elapsed > 0 ? recvSize.current / elapsed : 0;
-          onProgress?.({ percent, speed, received: recvSize.current, total: meta.size });
 
-          if (recvSize.current >= meta.size) {
-            const blob = new Blob(recvBuffers.current, { type: meta.type });
-            onFileReceived?.({ blob, name: meta.name, size: meta.size });
-            recvBuffers.current = [];
-            recvSize.current = 0;
-            fileMeta.current = null;
-          }
-        }
+        const percent = Math.min(99, Math.round((recvSize.current / meta.size) * 100));
+        const elapsed = (Date.now() - startTime.current) / 1000;
+        const speed = elapsed > 0 ? recvSize.current / elapsed : 0;
+        onProgress?.({ percent, speed, received: Math.min(recvSize.current, meta.size), total: meta.size });
       }
     };
   }, [onConnected, onProgress, onFileReceived, decryptChunk]);
@@ -120,31 +144,40 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
 
   const sendFile = useCallback(async (file) => {
     const dc = dcRef.current;
-    if (!dc || dc.readyState !== 'open') return;
+    if (!dc || dc.readyState !== 'open' || sendingRef.current) return;
 
-    // Send metadata first (unencrypted — just file name/size/type)
-    dc.send(JSON.stringify({ name: file.name, size: file.size, type: file.type }));
+    sendingRef.current = true;
 
-    const buffer = await file.arrayBuffer();
-    let offset = 0;
-    const totalSize = buffer.byteLength;
-    startTime.current = Date.now();
+    // Send metadata first (unencrypted control message)
+    dc.send(JSON.stringify({
+      kind: 'meta',
+      version: 2,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      encrypted: !!encryptChunk,
+    }));
 
-    const sendNext = async () => {
+    try {
+      const buffer = await file.arrayBuffer();
+      let offset = 0;
+      const totalSize = buffer.byteLength;
+      startTime.current = Date.now();
+
       while (offset < totalSize) {
         // Back-pressure control for large files
         if (dc.bufferedAmount > 16 * 1024 * 1024) {
           dc.bufferedAmountLowThreshold = 8 * 1024 * 1024;
-          dc.onbufferedamountlow = () => {
-            dc.onbufferedamountlow = null;
-            sendNext();
-          };
-          return;
+          await new Promise((resolve) => {
+            dc.onbufferedamountlow = () => {
+              dc.onbufferedamountlow = null;
+              resolve();
+            };
+          });
         }
 
         const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
 
-        // Encrypt chunk if encryption is enabled
         if (encryptChunk) {
           const encrypted = await encryptChunk(chunk);
           dc.send(encrypted);
@@ -153,14 +186,18 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
         }
 
         offset += CHUNK_SIZE;
-        const percent = Math.min(100, Math.round((offset / totalSize) * 100));
+        const sent = Math.min(offset, totalSize);
+        const percent = Math.min(99, Math.round((sent / totalSize) * 100));
         const elapsed = (Date.now() - startTime.current) / 1000;
-        const speed = elapsed > 0 ? Math.min(offset, totalSize) / elapsed : 0;
-        onProgress?.({ percent, speed, sent: Math.min(offset, totalSize), total: totalSize });
+        const speed = elapsed > 0 ? sent / elapsed : 0;
+        onProgress?.({ percent, speed, sent, total: totalSize });
       }
-    };
 
-    await sendNext();
+      dc.send(JSON.stringify({ kind: 'done' }));
+      onProgress?.({ percent: 100, speed: 0, sent: totalSize, total: totalSize });
+    } finally {
+      sendingRef.current = false;
+    }
   }, [onProgress, encryptChunk]);
 
   /** Get connection type info (direct vs relayed) */

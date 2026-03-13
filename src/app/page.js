@@ -41,9 +41,11 @@ export default function Home() {
         setSessionCode(msg.payload.code);
         setRoomToken(msg.payload.token || '');
         setStatus('waiting');
+        setErrorMsg('');
         break;
       case 'joined':
         setStatus('waiting');
+        setErrorMsg('');
         break;
       case 'peer-joined':
         createOffer();
@@ -58,8 +60,13 @@ export default function Home() {
         handleIceCandidate(msg.payload);
         break;
       case 'peer-disconnected':
-        setStatus('error');
-        setErrorMsg('Peer disconnected.');
+        setStatus('waiting');
+        setProgress(null);
+        setSelectedFile(null);
+        setErrorMsg('Peer disconnected. Room is available for a new connection.');
+        break;
+      case 'left':
+        setStatus('idle');
         break;
       case 'error':
         setErrorMsg(msg.payload.message);
@@ -123,6 +130,7 @@ export default function Home() {
   // ── Actions ─────────────────────────────────────────────────────────
   const startSend = async () => {
     try {
+      setErrorMsg('');
       // Generate encryption key
       const key = await generateKey();
       cryptoKeyRef.current = key;
@@ -139,11 +147,13 @@ export default function Home() {
   };
 
   const startReceive = () => {
+    setErrorMsg('');
     setMode('receive');
     setStatus('idle');
   };
 
   const joinRoom = (code) => {
+    setErrorMsg('');
     send({ type: 'join', payload: { code } });
   };
 
@@ -166,8 +176,13 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
-  const reset = () => {
+  const leaveRoom = useCallback(() => {
+    send({ type: 'leave' });
     cleanup();
+  }, [send, cleanup]);
+
+  const reset = () => {
+    leaveRoom();
     setMode(null);
     setStatus('idle');
     setSessionCode('');
@@ -189,24 +204,21 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      {/* Background gradient orbs */}
-      <div className="absolute top-[-50%] left-[-20%] w-[600px] h-[600px] rounded-full opacity-[0.07]"
-        style={{ background: 'radial-gradient(circle, #6366f1, transparent 70%)' }} />
-      <div className="absolute bottom-[-40%] right-[-15%] w-[500px] h-[500px] rounded-full opacity-[0.05]"
-        style={{ background: 'radial-gradient(circle, #8b5cf6, transparent 70%)' }} />
+    <main className="relative min-h-screen overflow-hidden px-4 py-10 sm:px-6">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-36 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-cyan-500/20 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-teal-500/15 blur-3xl" />
+      </div>
 
-      <div className="w-full max-w-md relative z-10">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-white mb-2"
-            style={{ textShadow: '0 0 40px rgba(99, 102, 241, 0.3)' }}>
-            ⚡ P2P FileShare
-          </h1>
-          <p className="text-slate-500 text-sm">Encrypted direct transfer — no cloud, no limits, no tracking</p>
-        </div>
+      <section className="relative mx-auto w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-8">
+        <header className="mb-8 text-center" style={{ animation: 'fadeIn 0.5s ease-out' }}>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300/90">Secure Peer-to-Peer Transfer</p>
+          <h1 className="text-3xl font-semibold text-white sm:text-4xl">P2P FileShare</h1>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-slate-300">
+            Direct WebRTC file transfer with end-to-end encryption. No cloud storage and no retained files.
+          </p>
+        </header>
 
-        {/* Connection Status */}
         <div className="mb-8">
           <ConnectionStatus
             wsState={wsState}
@@ -215,36 +227,38 @@ export default function Home() {
           />
         </div>
 
-        {/* Mode selection */}
         {!mode && (
-          <div className="flex gap-4" style={{ animation: 'fadeIn 0.5s ease-out' }}>
-            <button onClick={startSend} id="btn-send"
-              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-5 rounded-2xl text-lg transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-0.5 active:translate-y-0">
-              📤 Send File
+          <div className="grid gap-4 sm:grid-cols-2" style={{ animation: 'slideUp 0.45s ease-out' }}>
+            <button
+              onClick={startSend}
+              id="btn-send"
+              className="rounded-2xl bg-cyan-600 px-6 py-5 text-base font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-cyan-500 hover:shadow-lg hover:shadow-cyan-500/30"
+            >
+              Send File
             </button>
-            <button onClick={startReceive} id="btn-receive"
-              className="flex-1 bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700/80 hover:border-slate-600 text-white font-semibold py-5 rounded-2xl text-lg transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0">
-              📥 Receive
+            <button
+              onClick={startReceive}
+              id="btn-receive"
+              className="rounded-2xl border border-white/15 bg-white/5 px-6 py-5 text-base font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/50 hover:bg-white/10"
+            >
+              Receive File
             </button>
           </div>
         )}
 
-        {/* Send flow */}
         {mode === 'send' && (
           <div className="space-y-6" style={{ animation: 'slideUp 0.4s ease-out' }}>
             <SessionCode mode="send" code={sessionCode} token={roomToken} encryptionKey={encKeyString} />
 
             {status === 'connected' && !selectedFile && (
-              <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                <p className="text-emerald-400 text-center text-sm mb-4 flex items-center justify-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" /> Friend connected! Select a file to send.
-                </p>
+              <div>
+                <p className="mb-4 text-center text-sm text-emerald-300">Receiver connected. Select a file to send.</p>
                 <FileDropZone onFileSelect={handleFileSelect} disabled={false} />
               </div>
             )}
 
             {status === 'transferring' && selectedFile && (
-              <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+              <div>
                 <FileDropZone selectedFile={selectedFile} disabled={true} />
                 <div className="mt-4">
                   <ProgressBar progress={progress} />
@@ -253,57 +267,54 @@ export default function Home() {
             )}
 
             {status === 'done' && (
-              <div className="text-center py-6" style={{ animation: 'scaleIn 0.3s ease-out' }}>
-                <div className="text-5xl mb-3">✅</div>
-                <p className="text-emerald-400 font-semibold text-lg">File sent successfully!</p>
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 text-center" style={{ animation: 'scaleIn 0.3s ease-out' }}>
+                <p className="text-lg font-semibold text-emerald-300">Transfer complete</p>
                 {selectedFile && (
-                  <p className="text-slate-500 text-sm mt-1">{selectedFile.name} • {formatSize(selectedFile.size)}</p>
+                  <p className="mt-1 text-sm text-emerald-100/80">{selectedFile.name} • {formatSize(selectedFile.size)}</p>
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* Receive flow */}
         {mode === 'receive' && (
           <div className="space-y-6" style={{ animation: 'slideUp 0.4s ease-out' }}>
             {status === 'idle' && <SessionCode mode="receive" onJoin={joinRoom} />}
 
             {status === 'waiting' && (
-              <div className="text-center py-8">
-                <div className="text-4xl mb-3 animate-pulse">🔗</div>
-                <p className="text-slate-400">Connecting to sender...</p>
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-7 text-center">
+                <p className="text-sm text-slate-300">Waiting for sender...</p>
               </div>
             )}
 
             {status === 'connected' && (
-              <div className="text-center py-8" style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                <div className="text-4xl mb-3">✅</div>
-                <p className="text-emerald-400 font-medium">Connected! Waiting for file...</p>
+              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-5 py-7 text-center" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                <p className="font-medium text-emerald-300">Connected. Waiting for file data.</p>
               </div>
             )}
 
             {status === 'transferring' && (
-              <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                <div className="text-center mb-4">
-                  <p className="text-slate-300 font-medium">Receiving file...</p>
+              <div>
+                <div className="mb-4 text-center">
+                  <p className="font-medium text-slate-200">Receiving file</p>
                 </div>
                 <ProgressBar progress={progress} />
               </div>
             )}
 
             {status === 'done' && receivedFile && (
-              <div className="text-center space-y-5" style={{ animation: 'scaleIn 0.3s ease-out' }}>
-                <div className="text-5xl mb-2">🎉</div>
-                <p className="text-emerald-400 font-semibold text-lg">File received!</p>
-                <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-3 inline-block">
-                  <p className="text-slate-200 font-medium">{receivedFile.name}</p>
-                  <p className="text-slate-500 text-sm">{formatSize(receivedFile.size)}</p>
+              <div className="space-y-5 text-center" style={{ animation: 'scaleIn 0.3s ease-out' }}>
+                <div className="inline-block rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
+                  <p className="font-medium text-slate-100">{receivedFile.name}</p>
+                  <p className="text-sm text-slate-400">{formatSize(receivedFile.size)}</p>
                 </div>
                 <div>
-                  <button onClick={downloadFile} id="btn-download"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-10 py-3.5 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-0.5">
-                    ⬇️ Download File
+                  <button
+                    onClick={downloadFile}
+                    id="btn-download"
+                    className="rounded-xl bg-cyan-600 px-8 py-3.5 font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-cyan-500 hover:shadow-lg hover:shadow-cyan-500/30"
+                  >
+                    Download File
                   </button>
                 </div>
               </div>
@@ -311,30 +322,26 @@ export default function Home() {
           </div>
         )}
 
-        {/* Error */}
         {errorMsg && (
-          <div className="mt-6 bg-red-950/30 border border-red-500/20 rounded-xl px-4 py-3 text-center"
-            style={{ animation: 'fadeIn 0.3s ease-out' }}>
-            <p className="text-red-400 text-sm">{errorMsg}</p>
+          <div className="mt-6 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-center" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+            <p className="text-sm text-amber-200">{errorMsg}</p>
           </div>
         )}
 
-        {/* Back button */}
         {mode && (
-          <button onClick={reset} id="btn-reset"
-            className="mt-8 w-full text-slate-600 hover:text-slate-300 text-sm transition-all duration-300 py-2">
-            ← Start Over
+          <button
+            onClick={reset}
+            id="btn-reset"
+            className="mt-8 w-full rounded-xl border border-white/15 bg-white/5 py-2.5 text-sm text-slate-300 transition-all duration-300 hover:bg-white/10"
+          >
+            Start Over
           </button>
         )}
 
-        {/* Footer */}
-        <div className="mt-12 text-center">
-          <p className="text-slate-700 text-xs">
-            Files transfer directly between devices via WebRTC.
-            <br />Nothing is stored on any server. End-to-end encrypted.
-          </p>
-        </div>
-      </div>
+        <footer className="mt-10 text-center text-xs text-slate-500">
+          Transfers are device-to-device over WebRTC. The signaling server coordinates connection only.
+        </footer>
+      </section>
     </main>
   );
 }

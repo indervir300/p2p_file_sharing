@@ -46,7 +46,7 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
 
   if (selectedFile) {
     return (
-      <div className="border border-slate-700/50 bg-slate-800/40 rounded-2xl p-6 text-center">
+      <div className="border border-white/10 bg-slate-900/60 rounded-2xl p-6 text-center">
         <div className="text-4xl mb-3">{getFileIcon(selectedFile)}</div>
         <p className="text-slate-200 font-medium truncate">{selectedFile.name}</p>
         <p className="text-slate-500 text-sm mt-1">{formatSize(selectedFile.size)}</p>
@@ -62,8 +62,8 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
       onClick={() => !disabled && inputRef.current?.click()}
       className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
         ${dragging
-          ? 'border-indigo-400 bg-indigo-950/50 shadow-lg shadow-indigo-500/10 scale-[1.02]'
-          : 'border-slate-700 hover:border-indigo-500/50 bg-slate-800/30 hover:bg-slate-800/50'
+          ? 'border-cyan-300 bg-cyan-500/10 shadow-lg shadow-cyan-500/10 scale-[1.01]'
+          : 'border-white/15 hover:border-cyan-400/70 bg-slate-900/50 hover:bg-slate-900/70'
         }
         ${disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
     >
@@ -74,12 +74,12 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
         onChange={(e) => e.target.files[0] && onFileSelect(e.target.files[0])}
       />
       <div className={`text-4xl mb-3 transition-transform duration-300 ${dragging ? 'scale-110' : ''}`}>
-        {dragging ? '⬇️' : '📁'}
+        {dragging ? 'Drop' : 'File'}
       </div>
       <p className="text-slate-300 font-medium">
-        {dragging ? 'Drop it here!' : 'Drop file here or click to select'}
+        {dragging ? 'Release to upload' : 'Drop a file here or click to browse'}
       </p>
-      <p className="text-slate-600 text-sm mt-1">Any file type • Any size</p>
+      <p className="text-slate-500 text-sm mt-1">All file types supported</p>
     </div>
   );
 }

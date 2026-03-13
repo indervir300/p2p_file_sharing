@@ -32,14 +32,14 @@ export default function SessionCode({ mode, code, token, encryptionKey, onJoin }
   if (mode === 'send') {
     return (
       <div className="text-center space-y-5">
-        <p className="text-sm text-slate-400">Share this code or link with your friend</p>
+        <p className="text-sm text-slate-300">Share this code or private link</p>
 
         {/* Room Code */}
         <div className="relative inline-block">
           <div
             onClick={copyCode}
-            className="text-4xl font-mono font-bold tracking-widest text-indigo-400 bg-slate-800/80 border border-slate-700/50 px-8 py-4 rounded-2xl cursor-pointer hover:border-indigo-500/50 transition-all duration-300"
-            style={{ textShadow: '0 0 20px rgba(99, 102, 241, 0.5)' }}
+            className="text-4xl font-mono font-bold tracking-widest text-cyan-300 bg-slate-900/80 border border-cyan-400/25 px-8 py-4 rounded-2xl cursor-pointer hover:border-cyan-300/60 transition-all duration-300"
+            style={{ textShadow: '0 0 24px rgba(56, 189, 248, 0.35)' }}
           >
             {code || (
               <span className="inline-flex gap-1">
@@ -60,7 +60,7 @@ export default function SessionCode({ mode, code, token, encryptionKey, onJoin }
         {shareableLink && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 max-w-full">
-              <div className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-xs text-slate-500 truncate font-mono">
+              <div className="flex-1 bg-slate-900/70 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400 truncate font-mono">
                 {shareableLink}
               </div>
               <button
@@ -68,22 +68,22 @@ export default function SessionCode({ mode, code, token, encryptionKey, onJoin }
                 className={`shrink-0 font-semibold px-5 py-2.5 rounded-xl text-sm transition-all duration-300 ${
                   copied
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white hover:shadow-lg hover:shadow-indigo-500/25'
+                    : 'bg-cyan-600 hover:bg-cyan-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
                 }`}
               >
-                {copied ? '✓ Copied!' : '🔗 Copy Link'}
+                {copied ? 'Copied' : 'Copy Link'}
               </button>
             </div>
-            <p className="text-xs text-slate-600 flex items-center justify-center gap-1">
+            <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"/>
               </svg>
-              Link contains encrypted room code &amp; encryption key
+              Link includes encrypted room token and key
             </p>
           </div>
         )}
 
-        <p className="text-xs text-slate-500 animate-pulse">Waiting for friend to join...</p>
+        <p className="text-xs text-slate-500 animate-pulse">Waiting for receiver to connect...</p>
       </div>
     );
   }
@@ -91,23 +91,23 @@ export default function SessionCode({ mode, code, token, encryptionKey, onJoin }
   // Receive mode
   return (
     <div className="text-center space-y-4">
-      <p className="text-sm text-slate-400">Enter the code from your friend</p>
+      <p className="text-sm text-slate-300">Enter the sender code</p>
       <input
         value={input}
         onChange={(e) => setInput(e.target.value.toUpperCase())}
         maxLength={6}
         placeholder="ABC123"
-        className="text-center text-2xl font-mono tracking-widest bg-slate-800/80 border border-slate-700/50 rounded-xl px-5 py-3.5 w-52 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:shadow-lg focus:shadow-indigo-500/10 transition-all duration-300"
+        className="text-center text-2xl font-mono tracking-widest bg-slate-900/80 border border-white/10 rounded-xl px-5 py-3.5 w-52 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-400/70 focus:shadow-lg focus:shadow-cyan-500/10 transition-all duration-300"
       />
       <br />
       <button
         onClick={() => onJoin(input)}
         disabled={input.length < 6}
-        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold px-10 py-3 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/25"
+        className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold px-10 py-3 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/25"
       >
         Connect
       </button>
-      <p className="text-xs text-slate-600">Or ask your friend to send you a link</p>
+      <p className="text-xs text-slate-500">Tip: use the private link for one-tap join</p>
     </div>
   );
 }
