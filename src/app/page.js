@@ -18,6 +18,7 @@ export default function Home() {
   const [sendQueue, setSendQueue] = useState([]);
   const [sendHistory, setSendHistory] = useState([]);
   const [receivedQueue, setReceivedQueue] = useState([]);
+  const [recentDownloads, setRecentDownloads] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [connectionType, setConnectionType] = useState(null);
 
@@ -110,6 +111,8 @@ export default function Home() {
         blob,
         name,
         size,
+        downloadCount: 0,
+        lastDownloadedAt: null,
       }]);
       setStatus('connected');
       setProgress(null);
@@ -223,6 +226,26 @@ export default function Home() {
     }
   };
 
+  const removePendingFile = (indexToRemove) => {
+    const isSending = status === 'transferring';
+    if (isSending && indexToRemove === 0) return;
+
+    pendingFilesRef.current = pendingFilesRef.current.filter((_, idx) => idx !== indexToRemove);
+    setSendQueue([...pendingFilesRef.current]);
+  };
+
+  const removeSentHistoryItem = (id) => {
+    setSendHistory((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const removeReceivedQueueItem = (id) => {
+    setReceivedQueue((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const removeRecentDownloadItem = (id) => {
+    setRecentDownloads((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const downloadFile = (fileItem) => {
     if (!fileItem) return;
     const url = URL.createObjectURL(fileItem.blob);
@@ -231,6 +254,34 @@ export default function Home() {
     a.download = fileItem.name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
+
+    const now = Date.now();
+    setReceivedQueue((prev) => prev.map((item) => (
+      item.id === fileItem.id
+        ? { ...item, downloadCount: (item.downloadCount || 0) + 1, lastDownloadedAt: now }
+        : item
+    )));
+
+    setRecentDownloads((prev) => {
+      const existing = prev.find((item) => item.id === fileItem.id);
+      if (existing) {
+        return prev
+          .map((item) => item.id === fileItem.id
+            ? {
+              ...item,
+              downloadCount: (item.downloadCount || 0) + 1,
+              lastDownloadedAt: now,
+            }
+            : item)
+          .sort((a, b) => (b.lastDownloadedAt || 0) - (a.lastDownloadedAt || 0));
+      }
+
+      return [{
+        ...fileItem,
+        downloadCount: 1,
+        lastDownloadedAt: now,
+      }, ...prev].sort((a, b) => (b.lastDownloadedAt || 0) - (a.lastDownloadedAt || 0));
+    });
   };
 
   const downloadAllFiles = () => {
@@ -242,6 +293,12 @@ export default function Home() {
   const backToRoom = () => {
     setProgress(null);
     setSelectedFile(null);
+    setErrorMsg('');
+    setStatus('connected');
+  };
+
+  const backToRoomReceiver = () => {
+    setProgress(null);
     setErrorMsg('');
     setStatus('connected');
   };
@@ -263,6 +320,7 @@ export default function Home() {
     setSendQueue([]);
     setSendHistory([]);
     setReceivedQueue([]);
+    setRecentDownloads([]);
     setErrorMsg('');
     setConnectionType(null);
     cryptoKeyRef.current = null;
@@ -277,7 +335,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-10 sm:px-6">
-      <section className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <header className="mb-8 text-center" style={{ animation: 'fadeIn 0.3s ease-out' }}>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Secure Peer-to-Peer Transfer</p>
           <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">P2P FileShare</h1>
@@ -327,7 +386,16 @@ export default function Home() {
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pending Queue ({sendQueue.length})</p>
                     <div className="space-y-1">
                       {sendQueue.slice(0, 6).map((file, idx) => (
-                        <p key={`${file.name}-${idx}`} className="truncate text-sm text-slate-700">{file.name}</p>
+                        <div key={`${file.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1">
+                          <p className="truncate text-sm text-slate-700">{file.name}</p>
+                          <button
+                            onClick={() => removePendingFile(idx)}
+                            disabled={status === 'transferring' && idx === 0}
+                            className="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       ))}
                       {sendQueue.length > 6 && (
                         <p className="text-xs text-slate-500">+ {sendQueue.length - 6} more</p>
@@ -357,9 +425,17 @@ export default function Home() {
                 </div>
                 <div className="space-y-1">
                   {sendHistory.slice(-8).reverse().map((file) => (
-                    <p key={file.id} className="truncate text-sm text-slate-700">
-                      {file.name} • {formatSize(file.size)}
-                    </p>
+                    <div key={file.id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1">
+                      <p className="truncate text-sm text-slate-700">
+                        {file.name} • {formatSize(file.size)}
+                      </p>
+                      <button
+                        onClick={() => removeSentHistoryItem(file.id)}
+                        className="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -381,32 +457,51 @@ export default function Home() {
               <div className="space-y-4" style={{ animation: 'fadeIn 0.25s ease-out' }}>
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center">
                   <p className="font-medium text-emerald-700">Connected. Waiting for files.</p>
+                  <button
+                    onClick={backToRoomReceiver}
+                    className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    Back To Room
+                  </button>
                 </div>
 
                 {receivedQueue.length > 0 && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Download Queue ({receivedQueue.length})</p>
-                      <button
-                        onClick={downloadAllFiles}
-                        className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
-                      >
-                        Download All
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={downloadAllFiles}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                        >
+                          Download All
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       {receivedQueue.slice().reverse().map((file) => (
                         <div key={file.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>
-                            <p className="text-xs text-slate-500">{formatSize(file.size)}</p>
+                            <p className="text-xs text-slate-500">
+                              {formatSize(file.size)}
+                              {file.downloadCount > 0 ? ` • Downloaded ${file.downloadCount}x` : ''}
+                            </p>
                           </div>
-                          <button
-                            onClick={() => downloadFile(file)}
-                            className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                          >
-                            Download
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => removeReceivedQueueItem(file.id)}
+                              className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            >
+                              Remove
+                            </button>
+                            <button
+                              onClick={() => downloadFile(file)}
+                              className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            >
+                              Download
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -446,6 +541,50 @@ export default function Home() {
           Transfers are device-to-device over WebRTC. The signaling server coordinates connection only.
         </footer>
       </section>
+
+      <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-800">Recent Downloads</h2>
+          {recentDownloads.length > 0 && (
+            <button
+              onClick={() => setRecentDownloads([])}
+              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {recentDownloads.length === 0 && (
+          <p className="text-xs text-slate-500">Downloaded files will appear here for quick re-download.</p>
+        )}
+
+        {recentDownloads.length > 0 && (
+          <div className="space-y-2">
+            {recentDownloads.slice(0, 20).map((file) => (
+              <div key={file.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>
+                <p className="text-xs text-slate-500">{formatSize(file.size)} • Downloaded {file.downloadCount || 1}x</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => downloadFile(file)}
+                    className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                  >
+                    Re-download
+                  </button>
+                  <button
+                    onClick={() => removeRecentDownloadItem(file.id)}
+                    className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
+      </div>
     </main>
   );
 }
