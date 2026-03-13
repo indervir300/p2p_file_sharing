@@ -46,10 +46,10 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
 
   if (selectedFile) {
     return (
-      <div className="border border-white/10 bg-slate-900/60 rounded-2xl p-6 text-center">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
         <div className="text-4xl mb-3">{getFileIcon(selectedFile)}</div>
-        <p className="text-slate-200 font-medium truncate">{selectedFile.name}</p>
-        <p className="text-slate-500 text-sm mt-1">{formatSize(selectedFile.size)}</p>
+        <p className="truncate font-medium text-slate-900">{selectedFile.name}</p>
+        <p className="mt-1 text-sm text-slate-500">{formatSize(selectedFile.size)}</p>
       </div>
     );
   }
@@ -62,8 +62,8 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
       onClick={() => !disabled && inputRef.current?.click()}
       className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
         ${dragging
-          ? 'border-cyan-300 bg-cyan-500/10 shadow-lg shadow-cyan-500/10 scale-[1.01]'
-          : 'border-white/15 hover:border-cyan-400/70 bg-slate-900/50 hover:bg-slate-900/70'
+          ? 'scale-[1.01] border-slate-500 bg-slate-100'
+          : 'border-slate-300 bg-white hover:border-slate-500 hover:bg-slate-50'
         }
         ${disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
     >
@@ -76,10 +76,10 @@ export default function FileDropZone({ onFileSelect, disabled, selectedFile }) {
       <div className={`text-4xl mb-3 transition-transform duration-300 ${dragging ? 'scale-110' : ''}`}>
         {dragging ? 'Drop' : 'File'}
       </div>
-      <p className="text-slate-300 font-medium">
+      <p className="font-medium text-slate-800">
         {dragging ? 'Release to upload' : 'Drop a file here or click to browse'}
       </p>
-      <p className="text-slate-500 text-sm mt-1">All file types supported</p>
+      <p className="mt-1 text-sm text-slate-500">All file types supported</p>
     </div>
   );
 }

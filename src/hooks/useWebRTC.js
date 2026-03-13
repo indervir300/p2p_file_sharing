@@ -24,7 +24,7 @@ const ICE_SERVERS = [
   },
 ];
 
-export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, encryptChunk, decryptChunk }) {
+export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, onTransferError, encryptChunk, decryptChunk }) {
   const pcRef = useRef(null);
   const dcRef = useRef(null);
   const recvBuffers = useRef([]);
@@ -64,6 +64,14 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
           const meta = fileMeta.current;
           if (!meta) return;
 
+          if (recvSize.current !== meta.size) {
+            onTransferError?.('Transfer integrity check failed. Please retry with the private link (code + key).');
+            recvBuffers.current = [];
+            recvSize.current = 0;
+            fileMeta.current = null;
+            return;
+          }
+
           const blob = new Blob(recvBuffers.current, { type: meta.type || 'application/octet-stream' });
           onProgress?.({ percent: 100, speed: 0, received: meta.size, total: meta.size });
           onFileReceived?.({ blob, name: meta.name, size: meta.size });
@@ -80,12 +88,13 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
         let chunk = data;
         if (meta.encrypted) {
           if (!decryptChunk) {
+            onTransferError?.('Missing decryption key. Ask sender for private link or enter key manually.');
             return;
           }
           try {
             chunk = await decryptChunk(data);
           } catch {
-            // Abort this chunk to avoid silently producing corrupted files.
+            onTransferError?.('Could not decrypt file chunk. Key is missing or incorrect.');
             return;
           }
         }
@@ -99,7 +108,7 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, e
         onProgress?.({ percent, speed, received: Math.min(recvSize.current, meta.size), total: meta.size });
       }
     };
-  }, [onConnected, onProgress, onFileReceived, decryptChunk]);
+  }, [onConnected, onProgress, onFileReceived, onTransferError, decryptChunk]);
 
   const createPeerConnection = useCallback(() => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });

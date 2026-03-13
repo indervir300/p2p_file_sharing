@@ -26,7 +26,7 @@ export default function ProgressBar({ progress }) {
 
   return (
     <div className="w-full space-y-2">
-      <div className="flex justify-between text-sm text-slate-400">
+      <div className="flex justify-between text-sm text-slate-600">
         <span className="truncate pr-2">
           {formatSize(transferred)} / {formatSize(total)}
         </span>
@@ -34,23 +34,13 @@ export default function ProgressBar({ progress }) {
       </div>
 
       {/* Progress bar */}
-      <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden relative">
+      <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
         <div
-          className="h-3 rounded-full transition-all duration-300 relative overflow-hidden"
+          className="h-3 rounded-full bg-slate-900 transition-all duration-300"
           style={{
             width: `${percent}%`,
-            background: 'linear-gradient(90deg, #0ea5e9, #06b6d4, #14b8a6)',
           }}
-        >
-          {/* Shimmer effect */}
-          <div
-            className="absolute inset-0 opacity-30"
-            style={{
-              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-              animation: 'shimmer 1.5s infinite',
-            }}
-          />
-        </div>
+        />
       </div>
 
       {/* Speed & ETA */}
