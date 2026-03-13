@@ -24,7 +24,7 @@ const ICE_SERVERS = [
   },
 ];
 
-export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, onTransferError, encryptChunk, decryptChunk }) {
+export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, onConnected, onTransferError, onChatMessage, encryptChunk, decryptChunk }) {
   const pcRef = useRef(null);
   const dcRef = useRef(null);
   const recvBuffers = useRef([]);
@@ -47,6 +47,11 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, o
           return;
         }
 
+        if (message.kind === 'chat') {
+          onChatMessage?.({ text: message.text, timestamp: message.timestamp, id: message.id });
+          return;
+        }
+
         if (message.kind === 'meta') {
           fileMeta.current = {
             name: message.name,
@@ -57,6 +62,7 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, o
           recvBuffers.current = [];
           recvSize.current = 0;
           startTime.current = Date.now();
+          onFileMeta?.({ name: message.name, size: message.size, type: message.type });
           return;
         }
 
@@ -108,7 +114,17 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, o
         onProgress?.({ percent, speed, received: Math.min(recvSize.current, meta.size), total: meta.size });
       }
     };
-  }, [onConnected, onProgress, onFileReceived, onTransferError, decryptChunk]);
+  }, [onConnected, onProgress, onFileMeta, onFileReceived, onTransferError, onChatMessage, decryptChunk]);
+
+  const sendChatMessage = useCallback((text) => {
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== 'open') return false;
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    dc.send(JSON.stringify({ kind: 'chat', text, timestamp: Date.now(), id }));
+    return true;
+  }, []);
 
   const createPeerConnection = useCallback(() => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -240,5 +256,5 @@ export function useWebRTC({ onSignal, onProgress, onFileReceived, onConnected, o
     fileMeta.current = null;
   }, []);
 
-  return { createOffer, handleOffer, handleAnswer, handleIceCandidate, sendFile, getConnectionInfo, cleanup };
+  return { createOffer, handleOffer, handleAnswer, handleIceCandidate, sendFile, sendChatMessage, getConnectionInfo, cleanup };
 }
