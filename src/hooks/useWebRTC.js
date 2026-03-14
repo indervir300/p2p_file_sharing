@@ -23,6 +23,7 @@ export function useWebRTC({
   onFileReceived,
   onConnected,
   onTransferError,
+  onTransferPaused,   // ← NEW: called when mid-transfer connection drops
   onChatMessage,
   onTyping,
   onReaction,
@@ -45,15 +46,27 @@ export function useWebRTC({
   const pendingCandidates = useRef([]);
   const isRelayMode       = useRef(false);
 
-  const pendingTransferRef = useRef(null);
-  const recvTransferRef    = useRef(null);
+  // ── Resumable transfer refs ────────────────────────────────────────
+  const pendingTransferRef = useRef(null); // sender side
+  const recvTransferRef    = useRef(null); // receiver side
   const abortSendRef       = useRef(false);
+
+  // ── How many chunks received since last ack ────────────────────────
+  const chunksSinceAck = useRef(0);
 
   // ── Control message sender ─────────────────────────────────────────
   const sendControl = useCallback((payload) => {
     if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
     const dc = dcRef.current;
     if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
+  }, [wsSend]);
+
+  // ── Helpers ────────────────────────────────────────────────────────
+  const sendDone = useCallback((transferId) => {
+    const payload = { kind: 'done', transferId };
+    isRelayMode.current
+      ? wsSend?.({ type: 'relay', payload })
+      : dcRef.current?.send(JSON.stringify(payload));
   }, [wsSend]);
 
   // ── Core send-buffer ───────────────────────────────────────────────
@@ -73,10 +86,22 @@ export function useWebRTC({
     }
 
     let offset = fromOffset;
-    startTime.current = fromOffset === 0 ? Date.now() : (startTime.current || Date.now());
+    startTime.current = fromOffset === 0
+      ? Date.now()
+      : (startTime.current || Date.now());
 
     while (offset < buffer.byteLength) {
-      if (abortSendRef.current) { abortSendRef.current = false; return false; }
+
+      // ── Abort: save exact byte offset so we can resume precisely ──
+      if (abortSendRef.current) {
+        abortSendRef.current = false;
+        if (pendingTransferRef.current) {
+          // Align to last complete chunk boundary for safety
+          const safeOffset = Math.floor(offset / CHUNK_SIZE) * CHUNK_SIZE;
+          pendingTransferRef.current.savedOffset = safeOffset;
+        }
+        return false;
+      }
 
       if (isRelayMode.current) {
         const rawChunk = buffer.slice(offset, offset + CHUNK_SIZE);
@@ -87,11 +112,17 @@ export function useWebRTC({
         } else {
           encoded = btoa(String.fromCharCode(...new Uint8Array(rawChunk)));
         }
-        wsSend?.({ type: 'relay', payload: { kind: 'chunk', transferId, data: encoded, encrypted: !!encryptChunk } });
+        wsSend?.({ type: 'relay', payload: {
+          kind: 'chunk', transferId, data: encoded, encrypted: !!encryptChunk,
+        }});
       } else {
         const dc = dcRef.current;
         if (!dc || dc.readyState !== 'open') {
-          if (pendingTransferRef.current) pendingTransferRef.current.ackedOffset = offset;
+          // Connection lost mid-transfer — save offset
+          if (pendingTransferRef.current) {
+            const safeOffset = Math.floor(offset / CHUNK_SIZE) * CHUNK_SIZE;
+            pendingTransferRef.current.savedOffset = safeOffset;
+          }
           return false;
         }
         if (dc.bufferedAmount > 16 * 1024 * 1024) {
@@ -134,12 +165,14 @@ export function useWebRTC({
 
     recvBuffers.current.push(chunk);
     recvSize.current += chunk.byteLength;
+    chunksSinceAck.current += 1;
 
     if (recvTransferRef.current)
       recvTransferRef.current.receivedBytes = recvSize.current;
 
-    const chunkCount = Math.floor(recvSize.current / CHUNK_SIZE);
-    if (chunkCount > 0 && chunkCount % 16 === 0 && recvTransferRef.current) {
+    // Acknowledge every 16 chunks so sender knows safe resume point
+    if (chunksSinceAck.current >= 16 && recvTransferRef.current) {
+      chunksSinceAck.current = 0;
       sendControl({
         kind: 'transfer-ack',
         transferId: recvTransferRef.current.transferId,
@@ -150,7 +183,11 @@ export function useWebRTC({
     const percent = Math.min(99, Math.round((recvSize.current / meta.size) * 100));
     const elapsed = (Date.now() - startTime.current) / 1000;
     const speed   = elapsed > 0 ? recvSize.current / elapsed : 0;
-    onProgress?.({ percent, speed, received: Math.min(recvSize.current, meta.size), total: meta.size });
+    onProgress?.({
+      percent, speed,
+      received: Math.min(recvSize.current, meta.size),
+      total: meta.size,
+    });
   }, [decryptChunk, onTransferError, onProgress, sendControl]);
 
   // ── Transfer done ──────────────────────────────────────────────────
@@ -161,29 +198,58 @@ export function useWebRTC({
       onTransferError?.('Transfer integrity check failed. Please retry.');
       recvBuffers.current = []; recvSize.current = 0;
       fileMeta.current = null; recvTransferRef.current = null;
+      chunksSinceAck.current = 0;
       return;
     }
-    const blob = new Blob(recvBuffers.current, { type: meta.type || 'application/octet-stream' });
+    const blob = new Blob(recvBuffers.current, {
+      type: meta.type || 'application/octet-stream',
+    });
     onProgress?.({ percent: 100, speed: 0, received: meta.size, total: meta.size });
     onFileReceived?.({ blob, name: meta.name, size: meta.size });
     recvBuffers.current = []; recvSize.current = 0;
     fileMeta.current = null; recvTransferRef.current = null;
+    chunksSinceAck.current = 0;
   }, [onTransferError, onProgress, onFileReceived]);
+
+  // ── Resume helpers ─────────────────────────────────────────────────
+  // Called by RECEIVER when channel re-opens (DataChannel or relay)
+  const sendResumeRequest = useCallback(() => {
+    const recv = recvTransferRef.current;
+    if (!recv) return;
+    // Align to chunk boundary so sender re-sends full chunks
+    const safeOffset = Math.floor(recv.receivedBytes / CHUNK_SIZE) * CHUNK_SIZE;
+    // Truncate receiver buffer to safe boundary
+    if (safeOffset < recv.receivedBytes) {
+      let cumulative = 0;
+      const safeBufs = [];
+      for (const buf of recvBuffers.current) {
+        if (cumulative + buf.byteLength <= safeOffset) {
+          safeBufs.push(buf);
+          cumulative += buf.byteLength;
+        } else if (cumulative < safeOffset) {
+          safeBufs.push(buf.slice(0, safeOffset - cumulative));
+          cumulative = safeOffset;
+          break;
+        } else break;
+      }
+      recvBuffers.current = safeBufs;
+      recvSize.current = safeOffset;
+      recv.receivedBytes = safeOffset;
+    }
+    chunksSinceAck.current = 0;
+    sendControl({
+      kind: 'resume-request',
+      transferId: recv.transferId,
+      offset: safeOffset,
+    });
+  }, [sendControl]);
 
   // ── Central message processor ──────────────────────────────────────
   const processMessage = useCallback(async (message) => {
     const { kind } = message;
 
-    // Whiteboard
-    if (kind?.startsWith('wb-')) {
-      onWhiteboardEvent?.(message);
-      return;
-    }
-
-    if (kind === 'typing') {
-      onTyping?.();
-      return;
-    }
+    if (kind?.startsWith('wb-')) { onWhiteboardEvent?.(message); return; }
+    if (kind === 'typing')       { onTyping?.(); return; }
 
     if (kind === 'reaction') {
       onReaction?.({ msgId: message.msgId, emoji: message.emoji, fromPeer: true });
@@ -192,53 +258,51 @@ export function useWebRTC({
 
     if (kind === 'chat') {
       onChatMessage?.({
-        text:      message.text,
-        timestamp: message.timestamp,
-        id:        message.id,
-        replyTo:   message.replyTo || null,
+        text: message.text, timestamp: message.timestamp,
+        id: message.id, replyTo: message.replyTo || null,
       });
       return;
     }
 
-    if (kind === 'edit') {
-      onMessageEdit?.({ id: message.id, newText: message.newText });
-      return;
-    }
-
-    if (kind === 'delete') {
-      onMessageDelete?.({ id: message.id });
-      return;
-    }
-
-    if (kind === 'link-preview') {
-      onLinkPreview?.({ msgId: message.msgId, preview: message.preview });
-      return;
-    }
+    if (kind === 'edit') { onMessageEdit?.({ id: message.id, newText: message.newText }); return; }
+    if (kind === 'delete') { onMessageDelete?.({ id: message.id }); return; }
+    if (kind === 'link-preview') { onLinkPreview?.({ msgId: message.msgId, preview: message.preview }); return; }
 
     if (kind === 'transfer-ack') {
-      if (pendingTransferRef.current?.transferId === message.transferId)
+      // Update sender's safe resume point — use receiver's offset (more accurate)
+      if (pendingTransferRef.current?.transferId === message.transferId) {
         pendingTransferRef.current.ackedOffset = message.offset;
+      }
       return;
     }
 
     if (kind === 'resume-request') {
       const pending = pendingTransferRef.current;
       if (!pending || pending.transferId !== message.transferId || !pending.buffer) return;
+
+      // Use receiver's reported offset — it's ground truth
       const resumeFrom = message.offset;
+      console.log(`[Resume] Sender resuming from byte ${resumeFrom} / ${pending.totalSize}`);
+
       onProgress?.({
         percent: Math.round((resumeFrom / pending.totalSize) * 100),
         speed: 0, sent: resumeFrom, total: pending.totalSize,
       });
+
+      // Small delay to let relay/channel fully stabilise
+      await new Promise((r) => setTimeout(r, 300));
+
       const done = await sendBuffer({
-        transferId: pending.transferId, buffer: pending.buffer,
-        fromOffset: resumeFrom, totalSize: pending.totalSize,
-        isMeta: true, metaPayload: pending.metaPayload,
+        transferId: pending.transferId,
+        buffer:     pending.buffer,
+        fromOffset: resumeFrom,
+        totalSize:  pending.totalSize,
+        isMeta:     true,
+        metaPayload: { ...pending.metaPayload, fromOffset: resumeFrom },
       });
+
       if (done) {
-        const donePayload = { kind: 'done', transferId: pending.transferId };
-        isRelayMode.current
-          ? wsSend?.({ type: 'relay', payload: donePayload })
-          : dcRef.current?.send(JSON.stringify(donePayload));
+        sendDone(pending.transferId);
         onProgress?.({ percent: 100, speed: 0, sent: pending.totalSize, total: pending.totalSize });
         pendingTransferRef.current = null;
       }
@@ -246,14 +310,21 @@ export function useWebRTC({
     }
 
     if (kind === 'meta') {
+      // Resume: same transferId and we already have bytes
       const isResume = !!message.fromOffset &&
         recvTransferRef.current?.transferId === message.transferId;
-      if (isResume) { startTime.current = Date.now(); return; }
+      if (isResume) {
+        console.log(`[Resume] Receiver resuming — already have ${recvSize.current} bytes`);
+        startTime.current = Date.now();
+        return;
+      }
+      // Fresh transfer
       fileMeta.current = {
         name: message.name, size: message.size,
         type: message.type, encrypted: !!message.encrypted,
       };
       recvBuffers.current = []; recvSize.current = 0;
+      chunksSinceAck.current = 0;
       startTime.current = Date.now();
       recvTransferRef.current = { transferId: message.transferId, receivedBytes: 0 };
       onFileMeta?.({ name: message.name, size: message.size, type: message.type });
@@ -264,7 +335,7 @@ export function useWebRTC({
   }, [
     onTyping, onReaction, onChatMessage, onWhiteboardEvent,
     onMessageEdit, onMessageDelete, onLinkPreview,
-    onProgress, onFileMeta, processTransferDone, sendBuffer, wsSend,
+    onProgress, onFileMeta, processTransferDone, sendBuffer, sendDone, wsSend,
   ]);
 
   // ── DataChannel setup ──────────────────────────────────────────────
@@ -274,17 +345,27 @@ export function useWebRTC({
     dc.onopen = () => {
       console.log('DataChannel OPEN');
       onConnected?.();
+      // Receiver auto-resumes if mid-transfer
       if (recvTransferRef.current) {
-        sendControl({
-          kind: 'resume-request',
-          transferId: recvTransferRef.current.transferId,
-          offset: recvTransferRef.current.receivedBytes,
-        });
+        console.log('[Resume] DataChannel reopened — sending resume-request');
+        sendResumeRequest();
       }
     };
 
-    dc.onerror = (err) => console.error('DataChannel Error:', err);
-    dc.onclose = () => console.log('DataChannel CLOSED');
+    dc.onerror = (err) => {
+      console.error('DataChannel Error:', err);
+      // Notify UI that active transfer is paused
+      if (recvTransferRef.current || pendingTransferRef.current) {
+        onTransferPaused?.();
+      }
+    };
+
+    dc.onclose = () => {
+      console.log('DataChannel CLOSED');
+      if (recvTransferRef.current || pendingTransferRef.current) {
+        onTransferPaused?.();
+      }
+    };
 
     dc.onmessage = async ({ data }) => {
       if (typeof data === 'string') {
@@ -295,7 +376,7 @@ export function useWebRTC({
         await processIncomingChunk(data, false);
       }
     };
-  }, [onConnected, processMessage, processIncomingChunk, sendControl]);
+  }, [onConnected, onTransferPaused, processMessage, processIncomingChunk, sendResumeRequest]);
 
   // ── WS Relay incoming ──────────────────────────────────────────────
   const handleRelayMessage = useCallback(async (payload) => {
@@ -304,27 +385,33 @@ export function useWebRTC({
     if (payload.kind === 'relay-connected') {
       if (!isRelayMode.current) {
         isRelayMode.current  = true;
-        abortSendRef.current = true;
+        abortSendRef.current = true;   // abort current P2P send
         onStateChange?.('relay');
         onConnected?.();
+
+        // Receiver: request resume via relay
         if (recvTransferRef.current) {
-          wsSend?.({ type: 'relay', payload: {
-            kind:       'resume-request',
-            transferId: recvTransferRef.current.transferId,
-            offset:     recvTransferRef.current.receivedBytes,
-          }});
+          console.log('[Resume] Relay connected — receiver sending resume-request via relay');
+          // Small delay to let sender's relay mode fully activate
+          await new Promise((r) => setTimeout(r, 400));
+          sendResumeRequest();
+        }
+
+        // Sender: if we have a pending transfer, wait for receiver's resume-request
+        if (pendingTransferRef.current) {
+          onTransferPaused?.();
+          console.log('[Resume] Relay connected — sender waiting for resume-request');
         }
       }
       return;
     }
 
-    if (payload.kind === 'chunk') {
-      await processIncomingChunk(payload.data, true);
-      return;
-    }
-
+    if (payload.kind === 'chunk') { await processIncomingChunk(payload.data, true); return; }
     await processMessage(payload);
-  }, [onStateChange, onConnected, processMessage, processIncomingChunk, wsSend]);
+  }, [
+    onStateChange, onConnected, onTransferPaused,
+    processMessage, processIncomingChunk, sendResumeRequest,
+  ]);
 
   // ── Peer Connection ────────────────────────────────────────────────
   const createPeerConnection = useCallback(() => {
@@ -338,22 +425,34 @@ export function useWebRTC({
       console.log('ICE State:', pc.iceConnectionState);
       onStateChange?.(pc.iceConnectionState);
 
-      if (pc.iceConnectionState === 'failed') {
-        isRelayMode.current = true; abortSendRef.current = true;
-        onStateChange?.('relay');
-        wsSend?.({ type: 'relay', payload: { kind: 'relay-connected' } });
-        onConnected?.();
-      }
-
       if (pc.iceConnectionState === 'disconnected') {
+        if (recvTransferRef.current || pendingTransferRef.current) {
+          onTransferPaused?.();
+          console.log('[Resume] ICE disconnected — transfer paused');
+        }
+        // Give P2P 4 s to recover before switching to relay
         setTimeout(() => {
-          if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
-            isRelayMode.current = true; abortSendRef.current = true;
+          if (pc.iceConnectionState !== 'connected' &&
+              pc.iceConnectionState !== 'completed') {
+            console.log('[Resume] ICE did not recover — switching to relay');
+            isRelayMode.current  = true;
+            abortSendRef.current = true;
             onStateChange?.('relay');
             wsSend?.({ type: 'relay', payload: { kind: 'relay-connected' } });
             onConnected?.();
           }
         }, 4000);
+      }
+
+      if (pc.iceConnectionState === 'failed') {
+        if (recvTransferRef.current || pendingTransferRef.current) {
+          onTransferPaused?.();
+        }
+        isRelayMode.current  = true;
+        abortSendRef.current = true;
+        onStateChange?.('relay');
+        wsSend?.({ type: 'relay', payload: { kind: 'relay-connected' } });
+        onConnected?.();
       }
     };
 
@@ -362,7 +461,7 @@ export function useWebRTC({
 
     pcRef.current = pc;
     return pc;
-  }, [onSignal, onStateChange, onConnected, wsSend]);
+  }, [onSignal, onStateChange, onConnected, onTransferPaused, wsSend]);
 
   const createOffer = useCallback(async () => {
     const pc = createPeerConnection();
@@ -382,7 +481,9 @@ export function useWebRTC({
     };
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     while (pendingCandidates.current.length > 0)
-      await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.current.shift())).catch(console.warn);
+      await pc.addIceCandidate(
+        new RTCIceCandidate(pendingCandidates.current.shift())
+      ).catch(console.warn);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     onSignal({ type: 'answer', payload: answer });
@@ -393,7 +494,9 @@ export function useWebRTC({
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
     while (pendingCandidates.current.length > 0)
-      await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.current.shift())).catch(console.warn);
+      await pc.addIceCandidate(
+        new RTCIceCandidate(pendingCandidates.current.shift())
+      ).catch(console.warn);
   }, []);
 
   const handleIceCandidate = useCallback(async (candidate) => {
@@ -408,8 +511,7 @@ export function useWebRTC({
   // ── Typing ─────────────────────────────────────────────────────────
   const sendTyping = useCallback(() => {
     if (isRelayMode.current) {
-      wsSend?.({ type: 'relay', payload: { kind: 'typing' } });
-      return;
+      wsSend?.({ type: 'relay', payload: { kind: 'typing' } }); return;
     }
     const dc = dcRef.current;
     if (dc?.readyState === 'open') dc.send(JSON.stringify({ kind: 'typing' }));
@@ -419,10 +521,7 @@ export function useWebRTC({
   const sendChatMessage = useCallback((text, replyTo = null) => {
     const id      = makeId();
     const payload = {
-      kind:      'chat',
-      text,
-      timestamp: Date.now(),
-      id,
+      kind: 'chat', text, timestamp: Date.now(), id,
       ...(replyTo && {
         replyTo: {
           id:     replyTo.id,
@@ -492,30 +591,35 @@ export function useWebRTC({
     try {
       const buffer = await file.arrayBuffer();
       pendingTransferRef.current = {
-        transferId, buffer,
-        totalSize: file.size, ackedOffset: 0, metaPayload,
+        transferId,
+        buffer,
+        totalSize:   file.size,
+        ackedOffset: 0,
+        savedOffset: 0,
+        metaPayload,
       };
       abortSendRef.current = false;
+
       const done = await sendBuffer({
         transferId, buffer, fromOffset: 0,
         totalSize: file.size, isMeta: true, metaPayload,
       });
+
       if (done) {
-        const donePayload = { kind: 'done', transferId };
-        isRelayMode.current
-          ? wsSend?.({ type: 'relay', payload: donePayload })
-          : dcRef.current?.send(JSON.stringify(donePayload));
+        sendDone(transferId);
         onProgress?.({ percent: 100, speed: 0, sent: file.size, total: file.size });
         pendingTransferRef.current = null;
       }
+      // If not done: pendingTransferRef stays alive — resume-request will retrigger sendBuffer
     } finally {
       sendingRef.current = false;
     }
-  }, [encryptChunk, wsSend, onProgress, sendBuffer]);
+  }, [encryptChunk, onProgress, sendBuffer, sendDone]);
 
   // ── Connection info ────────────────────────────────────────────────
   const getConnectionInfo = useCallback(async () => {
-    if (isRelayMode.current) return { type: 'relay', relayed: true, protocol: 'websocket' };
+    if (isRelayMode.current)
+      return { type: 'relay', relayed: true, protocol: 'websocket' };
     const pc = pcRef.current;
     if (!pc) return null;
     try {
@@ -540,10 +644,15 @@ export function useWebRTC({
     abortSendRef.current = true;
     dcRef.current?.close();
     pcRef.current?.close();
-    dcRef.current = null; pcRef.current = null;
-    recvBuffers.current = []; recvSize.current = 0;
-    fileMeta.current = null; isRelayMode.current = false;
-    pendingTransferRef.current = null; recvTransferRef.current = null;
+    dcRef.current      = null;
+    pcRef.current      = null;
+    recvBuffers.current = [];
+    recvSize.current   = 0;
+    fileMeta.current   = null;
+    isRelayMode.current = false;
+    pendingTransferRef.current = null;
+    recvTransferRef.current    = null;
+    chunksSinceAck.current     = 0;
   }, []);
 
   return {

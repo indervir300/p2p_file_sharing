@@ -37,7 +37,7 @@ export default function Home() {
   const [peerTyping, setPeerTyping]         = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [replyingTo, setReplyingTo]         = useState(null);
-  const [queueVersion, setQueueVersion]     = useState(0); // forces SendQueue re-render
+  const [queueVersion, setQueueVersion]     = useState(0);
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef           = useRef(null);
@@ -234,6 +234,17 @@ export default function Home() {
 
     onConnected: async () => {
       setStatus('connected');
+      // Restore paused file messages back to active states
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.type !== 'file') return m;
+          if (m.status === 'paused' && m.sender === 'me')
+            return { ...m, status: 'sending' };
+          if (m.status === 'paused' && m.sender === 'peer')
+            return { ...m, status: 'receiving' };
+          return m;
+        })
+      );
       setTimeout(async () => {
         const info = await getConnectionInfo();
         if (info) {
@@ -242,6 +253,19 @@ export default function Home() {
             addSystemMsg('Using server relay — still encrypted 🔒');
         }
       }, 2000);
+    },
+
+    // ── NEW: connection dropped mid-transfer ──────────────────────
+    onTransferPaused: () => {
+      // Mark the active sending message as paused
+      if (currentSendingMsgIdRef.current) {
+        updateMsg(currentSendingMsgIdRef.current, { status: 'paused' });
+      }
+      // Mark the active receiving message as paused
+      if (receivingMsgIdRef.current) {
+        updateMsg(receivingMsgIdRef.current, { status: 'paused' });
+      }
+      addSystemMsg('Transfer paused — reconnecting… ⏸');
     },
 
     onTransferError: (message) => {
@@ -308,8 +332,8 @@ export default function Home() {
   });
 
   // Keep refs in sync
-  useEffect(() => { sendReactionRef.current       = sendReaction;      }, [sendReaction]);
-  useEffect(() => { handleRelayMessageRef.current  = handleRelayMessage; }, [handleRelayMessage]);
+  useEffect(() => { sendReactionRef.current      = sendReaction;      }, [sendReaction]);
+  useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
@@ -351,8 +375,7 @@ export default function Home() {
     setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
-    setShowWhiteboard(false); setReplyingTo(null);
-    setQueueVersion(0);
+    setShowWhiteboard(false); setReplyingTo(null); setQueueVersion(0);
     cryptoKeyRef.current           = null;
     sendingLoopRunning.current     = false;
     currentSendingMsgIdRef.current = null;
@@ -371,17 +394,22 @@ export default function Home() {
         updateMsg(msgId, { status: 'sending', progress: 0 });
         setStatus('transferring');
         await sendFile(file);
-        currentSendingMsgIdRef.current = null;
-        pendingFilesRef.current.shift();
-        setQueueVersion((v) => v + 1);
-        updateMsg(msgId, { status: 'sent', progress: 100 });
+        // sendFile returns when either done OR paused (for resume)
+        // Only advance queue if fully sent (status will be 'sent' via onProgress 100%)
+        const msgNow = pendingFilesRef.current[0]; // might have changed
+        if (msgNow?.msgId === msgId) {
+          currentSendingMsgIdRef.current = null;
+          pendingFilesRef.current.shift();
+          setQueueVersion((v) => v + 1);
+          updateMsg(msgId, { status: 'sent', progress: 100 });
+        }
       }
     } finally {
       sendingLoopRunning.current     = false;
       currentSendingMsgIdRef.current = null;
-      setStatus('connected');
+      if (status !== 'idle') setStatus('connected');
     }
-  }, [sendFile, updateMsg]);
+  }, [sendFile, updateMsg, status]);
 
   useEffect(() => {
     let timer;
