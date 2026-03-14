@@ -1,106 +1,128 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import QRCodeModal from '@/app/components/lobby/QRCodeModal';
 
 export default function SessionCode({ mode, code, token, onJoin }) {
-  const [input, setInput] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
+  const [inputCode, setInputCode] = useState('');
+  const [showQR, setShowQR]       = useState(false);
+  const inputRef                  = useRef(null);
 
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const shareableLink = token && code
-    ? `${appUrl}/?join=${token}&code=${code}`
-    : '';
+  const joinUrl = code && token
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}?join=${token}&code=${code}`
+    : null;
 
-  const copyLink = async () => {
-    if (!shareableLink) return;
-    try {
-      await navigator.clipboard.writeText(shareableLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* clipboard not available */ }
-  };
-
-  const copyCode = async () => {
-    if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 2000);
-    } catch { /* clipboard not available */ }
+  const handleJoin = () => {
+    const trimmed = inputCode.trim().toUpperCase();
+    if (trimmed.length < 4) return;
+    onJoin?.(trimmed);
   };
 
   if (mode === 'send') {
     return (
-      <div className="space-y-5">
-        <p className="text-sm text-slate-600 text-center">Share room code or one-click private link.</p>
+      <>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-5 text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
+            Room Code
+          </p>
 
-        {/* Room Code */}
-        <div className="relative">
-          <div
-            onClick={copyCode}
-            className="w-full rounded-xl border border-slate-300 bg-white px-6 py-4 text-center font-mono text-3xl font-semibold tracking-[0.3em] text-slate-900 cursor-pointer hover:border-slate-400 transition-colors"
-          >
-            {code || (
-              <span className="inline-flex gap-1">
-                {[...Array(6)].map((_, i) => (
-                  <span key={i} className="h-5 w-3 rounded bg-slate-300 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
-                ))}
-              </span>
-            )}
-          </div>
-          {copiedCode && (
-            <span className="absolute -top-8 left-1/2 -translate-x-1/2 rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-700">
-              Code copied!
-            </span>
+          {code ? (
+            <>
+              <p className="font-mono text-4xl font-bold tracking-widest text-slate-900 dark:text-slate-100 mb-4">
+                {code}
+              </p>
+
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">
+                Share this code with your peer so they can join
+              </p>
+
+              <div className="flex flex-col gap-2">
+                {/* Copy link */}
+                {joinUrl && (
+                  <CopyButton url={joinUrl} />
+                )}
+
+                {/* QR Code */}
+                {joinUrl && (
+                  <button
+                    onClick={() => setShowQR(true)}
+                    className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-300 dark:border-slate-600 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                    </svg>
+                    Show QR Code
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center gap-2 py-4">
+              <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+              <span className="text-sm text-slate-400">Generating room…</span>
+            </div>
           )}
         </div>
 
-        {/* Shareable Link */}
-        {shareableLink && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 max-w-full">
-              <div className="flex-1 truncate rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 font-mono text-xs text-slate-700">
-                {shareableLink}
-              </div>
-              <button
-                onClick={copyLink}
-                className={`shrink-0 font-semibold px-5 py-2.5 rounded-xl text-sm transition-all duration-300 ${
-                  copied
-                    ? 'bg-emerald-600 text-white'
-                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {copied ? 'Copied' : 'Copy Link'}
-              </button>
-            </div>
-            <p className="text-xs text-slate-500">Private link securely contains everything needed to join.</p>
-          </div>
+        {showQR && joinUrl && (
+          <QRCodeModal
+            url={joinUrl}
+            code={code}
+            onClose={() => setShowQR(false)}
+          />
         )}
-
-        <p className="text-center text-xs text-slate-500 animate-pulse">Waiting for receiver to connect...</p>
-      </div>
+      </>
     );
   }
 
   // Receive mode
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-slate-600 text-center">Enter sender room code</p>
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-5">
+      <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3 text-center">
+        Enter Room Code
+      </p>
       <input
-        value={input}
-        onChange={(e) => setInput(e.target.value.toUpperCase())}
-        maxLength={6}
-        placeholder="ABC123"
-        className="mx-auto block w-56 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-center font-mono text-2xl tracking-widest text-slate-900 placeholder-slate-400 focus:border-slate-500 focus:outline-none"
+        ref={inputRef}
+        type="text"
+        value={inputCode}
+        onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+        onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+        placeholder="e.g. AB12"
+        maxLength={8}
+        className="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 text-center font-mono text-2xl font-bold tracking-widest text-slate-900 dark:text-slate-100 outline-none focus:border-slate-500 dark:focus:border-slate-400 focus:ring-1 focus:ring-slate-400 transition-colors mb-3"
       />
       <button
-        onClick={() => onJoin(input)}
-        disabled={input.length < 6}
-        className="w-full rounded-xl bg-slate-900 px-10 py-3 font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        onClick={handleJoin}
+        disabled={inputCode.trim().length < 4}
+        className="w-full rounded-xl bg-slate-900 dark:bg-slate-100 py-3 text-sm font-semibold text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        Connect
+        Join Session
       </button>
-      <p className="text-center text-xs text-slate-500">Tip: private link auto-fills everything.</p>
     </div>
+  );
+}
+
+function CopyButton({ url }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* silent */ }
+  };
+
+  return (
+    <button
+      onClick={copy}
+      className={`w-full rounded-xl py-2.5 text-sm font-semibold transition-all ${
+        copied
+          ? 'bg-emerald-500 text-white'
+          : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300'
+      }`}
+    >
+      {copied ? '✓ Link Copied!' : 'Copy Invite Link'}
+    </button>
   );
 }

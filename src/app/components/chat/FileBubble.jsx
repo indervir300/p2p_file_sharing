@@ -1,3 +1,8 @@
+'use client';
+import { useState } from 'react';
+import FilePreviewModal, { canPreview } from './FilePreviewModal';
+import AudioVisualizer from './AudioVisualizer';
+
 function formatSize(bytes) {
   if (bytes < 1024)       return `${bytes} B`;
   if (bytes < 1024 ** 2)  return `${(bytes / 1024).toFixed(1)} KB`;
@@ -6,99 +11,144 @@ function formatSize(bytes) {
 }
 
 export default function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
+  const [showPreview, setShowPreview] = useState(false);
   const { mimeType = '', previewUrl, name, size, status = 'queued', progress = 0 } = msg;
-  const isImg      = mimeType.startsWith('image/');
-  const isVid      = mimeType.startsWith('video/');
-  const isAud      = mimeType.startsWith('audio/');
-  const isBusy     = status === 'sending' || status === 'receiving';
-  const hasPreview = (isImg || isVid || isAud) && previewUrl;
+
+  const isImg  = mimeType.startsWith('image/');
+  const isVid  = mimeType.startsWith('video/');
+  const isAud  = mimeType.startsWith('audio/');
+  const isBusy = status === 'sending' || status === 'receiving';
+
+  const previewKind    = canPreview(msg);
+  const canShowPreview = previewKind &&
+    (msg.blob || previewUrl) &&
+    !['sending', 'receiving', 'queued'].includes(status);
 
   const bubble = isMine
     ? 'bg-slate-900 dark:bg-slate-700 text-white'
     : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100';
 
   return (
-    <div className={`w-64 sm:w-72 max-w-[80vw] rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
+    <>
+      <div className={`w-64 sm:w-72 max-w-[80vw] rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
 
-      {isImg && previewUrl && (
-        <button className="block w-full focus:outline-none" onClick={() => onPreview?.(previewUrl)}>
-          <img src={previewUrl} alt={name}
-            className={`block w-full max-h-52 object-cover ${isBusy ? 'opacity-50' : 'hover:opacity-90 transition-opacity'}`}
-          />
-        </button>
-      )}
-      {isVid && previewUrl && !isBusy && (
-        <video src={previewUrl} controls className="block w-full max-h-52 bg-black" />
-      )}
-      {isAud && previewUrl && !isBusy && (
-        <div className="px-3 pt-3">
-          <audio src={previewUrl} controls style={{ width: '100%', minWidth: 0 }} />
-        </div>
-      )}
+        {/* ── Image preview ─────────────────────────────────────────── */}
+        {isImg && previewUrl && (
+          <button className="block w-full focus:outline-none" onClick={() => setShowPreview(true)}>
+            <img src={previewUrl} alt={name}
+              className={`block w-full max-h-52 object-cover ${isBusy ? 'opacity-50' : 'hover:opacity-90 transition-opacity'}`}
+            />
+          </button>
+        )}
 
-      {!hasPreview && (
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}>
-            <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+        {/* ── Video player ──────────────────────────────────────────── */}
+        {isVid && previewUrl && !isBusy && (
+          <video src={previewUrl} controls className="block w-full max-h-52 bg-black" />
+        )}
+
+        {/* ── Audio visualizer ──────────────────────────────────────── */}
+        {isAud && previewUrl && !isBusy && (
+          <AudioVisualizer src={previewUrl} isMine={isMine} />
+        )}
+
+        {/* ── Non-media file row ────────────────────────────────────── */}
+        {!isImg && !isVid && !(isAud && previewUrl && !isBusy) && (
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}>
+              <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={`truncate text-sm font-medium ${isMine ? 'text-white' : 'text-slate-800 dark:text-slate-100'}`}>
+                {name}
+              </p>
+              <p className={`text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
+                {formatSize(size)}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className={`truncate text-sm font-medium ${isMine ? 'text-white' : 'text-slate-800 dark:text-slate-100'}`}>{name}</p>
-            <p className={`text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>{formatSize(size)}</p>
+        )}
+
+        {/* Name + size under media */}
+        {(isImg || isVid || (isAud && previewUrl && !isBusy)) && (
+          <p className={`truncate px-3 pt-1.5 text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
+            {name} · {formatSize(size)}
+          </p>
+        )}
+
+        {/* ── Progress bar ──────────────────────────────────────────── */}
+        {(isBusy || status === 'paused') && (
+          <div className={`mx-3 my-2 h-1.5 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'}`}>
+            <div
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                status === 'paused' ? 'bg-amber-400'
+                : isMine ? 'bg-white' : 'bg-slate-700 dark:bg-slate-300'
+              }`}
+              style={{ width: `${progress}%` }}
+            />
           </div>
-        </div>
-      )}
+        )}
 
-      {hasPreview && (
-        <p className={`truncate px-3 pt-1.5 text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
-          {name} · {formatSize(size)}
-        </p>
-      )}
+        {/* ── Footer row ────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+          <span className={`text-xs ${isMine ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'}`}>
+            {status === 'queued'    && 'Queued…'}
+            {status === 'sending'   && `Sending ${progress}%`}
+            {status === 'paused'    && `Paused · ${progress}% — resuming…`}
+            {status === 'sent'      && '✓ Sent'}
+            {status === 'receiving' && `Receiving ${progress}%`}
+            {status === 'error'     && '✗ Error'}
+          </span>
 
-      {(isBusy || status === 'paused') && (
-        <div className={`mx-3 my-2 h-1.5 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'}`}>
-          <div
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              status === 'paused' ? 'bg-amber-400'
-              : isMine ? 'bg-white' : 'bg-slate-700 dark:bg-slate-300'
-            }`}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
+          <div className="flex items-center gap-1.5">
+            {/* Cancel queued */}
+            {status === 'queued' && isMine && onCancel && (
+              <button onClick={() => onCancel(msg.id)}
+                className="rounded-lg border border-white/20 px-2 py-0.5 text-xs text-white/60 hover:bg-white/10 transition-colors">
+                Cancel
+              </button>
+            )}
 
-      <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
-        <span className={`text-xs ${isMine ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'}`}>
-          {status === 'queued'    && 'Queued…'}
-          {status === 'sending'   && `Sending ${progress}%`}
-          {status === 'paused'    && `Paused · ${progress}% — resuming…`}
-          {status === 'sent'      && '✓ Sent'}
-          {status === 'receiving' && `Receiving ${progress}%`}
-          {status === 'error'     && '✗ Error'}
-        </span>
-        <div className="flex items-center gap-1.5">
-          {status === 'queued' && isMine && onCancel && (
-            <button onClick={() => onCancel(msg.id)}
-              className="rounded-lg border border-white/20 px-2 py-0.5 text-xs text-white/60 hover:bg-white/10 transition-colors">
-              Cancel
-            </button>
-          )}
-          {!isMine && status === 'received' && (
-            <button onClick={() => onDownload?.(msg)}
-              className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-              {isImg || isVid ? 'Save' : 'Download'}
-            </button>
-          )}
-          {isMine && status === 'sent' && isImg && previewUrl && (
-            <button onClick={() => onDownload?.(msg)}
-              className="rounded-lg border border-white/20 px-3 py-1 text-xs font-medium text-white/70 hover:bg-white/10 transition-colors">
-              Save
-            </button>
-          )}
+            {/* Preview */}
+            {canShowPreview && (
+              <button
+                onClick={() => setShowPreview(true)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  isMine
+                    ? 'border-white/20 text-white/70 hover:bg-white/10'
+                    : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                Preview
+              </button>
+            )}
+
+            {/* Download — peer received */}
+            {!isMine && status === 'received' && (
+              <button onClick={() => onDownload?.(msg)}
+                className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                {isImg || isVid ? 'Save' : 'Download'}
+              </button>
+            )}
+
+            {/* Save — own sent image */}
+            {isMine && status === 'sent' && isImg && previewUrl && (
+              <button onClick={() => onDownload?.(msg)}
+                className="rounded-lg border border-white/20 px-3 py-1 text-xs font-medium text-white/70 hover:bg-white/10 transition-colors">
+                Save
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* ── Preview modal ────────────────────────────────────────────── */}
+      {showPreview && (
+        <FilePreviewModal msg={msg} onClose={() => setShowPreview(false)} />
+      )}
+    </>
   );
 }

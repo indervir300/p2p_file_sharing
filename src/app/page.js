@@ -12,6 +12,7 @@ import MessageBubble    from '@/app/components/chat/MessageBubble';
 import FileBubble       from '@/app/components/chat/FileBubble';
 import TypingIndicator  from '@/app/components/chat/TypingIndicator';
 import ChatInput        from '@/app/components/chat/ChatInput';
+import SendQueue        from '@/app/components/chat/SendQueue';
 import Whiteboard       from '@/app/components/whiteboard/Whiteboard';
 
 function genId() {
@@ -36,6 +37,7 @@ export default function Home() {
   const [peerTyping, setPeerTyping]         = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [replyingTo, setReplyingTo]         = useState(null);
+  const [queueVersion, setQueueVersion]     = useState(0); // forces SendQueue re-render
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef           = useRef(null);
@@ -156,6 +158,7 @@ export default function Home() {
       case 'peer-disconnected':
         setStatus('waiting');
         pendingFilesRef.current = [];
+        setQueueVersion((v) => v + 1);
         setPeerTyping(false);
         addSystemMsg('Peer disconnected. Waiting for reconnect…');
         setErrorMsg('');
@@ -194,13 +197,11 @@ export default function Home() {
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
 
-    // ── Progress ────────────────────────────────────────────────────
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
       if (activeId) updateMsg(activeId, { progress: p.percent });
     },
 
-    // ── File meta (receiver side) ───────────────────────────────────
     onFileMeta: ({ name, size, type }) => {
       const id = genId();
       receivingMsgIdRef.current = id;
@@ -212,7 +213,6 @@ export default function Home() {
       });
     },
 
-    // ── File received ───────────────────────────────────────────────
     onFileReceived: ({ blob }) => {
       const msgId = receivingMsgIdRef.current;
       receivingMsgIdRef.current = null;
@@ -232,7 +232,6 @@ export default function Home() {
       setStatus('connected');
     },
 
-    // ── Connected ───────────────────────────────────────────────────
     onConnected: async () => {
       setStatus('connected');
       setTimeout(async () => {
@@ -245,7 +244,6 @@ export default function Home() {
       }, 2000);
     },
 
-    // ── Transfer error ──────────────────────────────────────────────
     onTransferError: (message) => {
       setErrorMsg(message);
       if (receivingMsgIdRef.current) {
@@ -255,7 +253,6 @@ export default function Home() {
       setStatus('connected');
     },
 
-    // ── Chat message ────────────────────────────────────────────────
     onChatMessage: ({ text, id, timestamp, replyTo }) => {
       setPeerTyping(false);
       clearTimeout(typingTimeoutRef.current);
@@ -266,45 +263,38 @@ export default function Home() {
       });
     },
 
-    // ── Typing ──────────────────────────────────────────────────────
     onTyping: () => {
       setPeerTyping(true);
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => setPeerTyping(false), 2500);
     },
 
-    // ── Reaction ────────────────────────────────────────────────────
     onReaction: ({ msgId, emoji, fromPeer }) => {
       handleReaction(msgId, emoji, fromPeer);
     },
 
-    // ── Whiteboard ──────────────────────────────────────────────────
     onWhiteboardEvent: (event) => {
       whiteboardRef.current?.handlePeerEvent(event);
     },
 
-    // ── Edit ────────────────────────────────────────────────────────
     onMessageEdit: ({ id, newText }) => {
       setMessages((prev) =>
         prev.map((m) => m.id === id ? { ...m, text: newText, edited: true } : m)
       );
     },
 
-    // ── Delete ──────────────────────────────────────────────────────
     onMessageDelete: ({ id }) => {
       setMessages((prev) =>
         prev.map((m) => m.id === id ? { ...m, deleted: true } : m)
       );
     },
 
-    // ── Link preview ────────────────────────────────────────────────
     onLinkPreview: ({ msgId, preview }) => {
       setMessages((prev) =>
         prev.map((m) => m.id === msgId ? { ...m, linkPreview: preview } : m)
       );
     },
 
-    // ── State change ────────────────────────────────────────────────
     onStateChange: (state) => {
       setRtcState(state);
       if (state === 'relay')
@@ -318,8 +308,8 @@ export default function Home() {
   });
 
   // Keep refs in sync
-  useEffect(() => { sendReactionRef.current      = sendReaction;      }, [sendReaction]);
-  useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
+  useEffect(() => { sendReactionRef.current       = sendReaction;      }, [sendReaction]);
+  useEffect(() => { handleRelayMessageRef.current  = handleRelayMessage; }, [handleRelayMessage]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
@@ -362,6 +352,7 @@ export default function Home() {
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
     setShowWhiteboard(false); setReplyingTo(null);
+    setQueueVersion(0);
     cryptoKeyRef.current           = null;
     sendingLoopRunning.current     = false;
     currentSendingMsgIdRef.current = null;
@@ -382,6 +373,7 @@ export default function Home() {
         await sendFile(file);
         currentSendingMsgIdRef.current = null;
         pendingFilesRef.current.shift();
+        setQueueVersion((v) => v + 1);
         updateMsg(msgId, { status: 'sent', progress: 100 });
       }
     } finally {
@@ -421,17 +413,38 @@ export default function Home() {
       };
     });
     setMessages((prev) => [...prev, ...newMsgs]);
+    setQueueVersion((v) => v + 1);
     if (status === 'connected') runSendLoop();
   }, [status, runSendLoop]);
 
   const cancelQueuedFile = useCallback((msgId) => {
     const idx = pendingFilesRef.current.findIndex((x) => x.msgId === msgId);
     if (idx === 0 && status === 'transferring') return;
-    if (idx >= 0) pendingFilesRef.current.splice(idx, 1);
+    if (idx >= 0) {
+      pendingFilesRef.current.splice(idx, 1);
+      setQueueVersion((v) => v + 1);
+    }
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   }, [status]);
 
-  // ── Link preview fetcher ───────────────────────────────────────────
+  // ── Reorder queue ──────────────────────────────────────────────────
+  const reorderQueue = useCallback((fromIdx, toIdx) => {
+    const arr = [...pendingFilesRef.current];
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
+    pendingFilesRef.current = arr;
+    setQueueVersion((v) => v + 1);
+    setMessages((prev) => {
+      const queuedIds = arr.map((q) => q.msgId);
+      const nonQueued = prev.filter((m) => !queuedIds.includes(m.id));
+      const queued    = queuedIds
+        .map((id) => prev.find((m) => m.id === id))
+        .filter(Boolean);
+      return [...nonQueued, ...queued];
+    });
+  }, []);
+
+  // ── Link preview ───────────────────────────────────────────────────
   const fetchAndSendLinkPreview = useCallback(async (msgId, text) => {
     const matches = text.match(URL_REGEX);
     const url     = matches?.[0];
@@ -445,7 +458,7 @@ export default function Home() {
         prev.map((m) => m.id === msgId ? { ...m, linkPreview: preview } : m)
       );
       sendLinkPreview(msgId, preview);
-    } catch { /* silent fail */ }
+    } catch { /* silent */ }
   }, [sendLinkPreview]);
 
   // ── Send text ──────────────────────────────────────────────────────
@@ -497,9 +510,9 @@ export default function Home() {
 
   const chatReady = status === 'connected' || status === 'transferring';
 
-  // ════════════════════════════════════════════════════════════════════
+  // ────────────────────────────────────────────────────────────────────
   //  Render
-  // ════════════════════════════════════════════════════════════════════
+  // ────────────────────────────────────────────────────────────────────
   return (
     <main className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
 
@@ -521,7 +534,6 @@ export default function Home() {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Whiteboard */}
               <button
                 onClick={() => setShowWhiteboard(true)}
                 title="Open whiteboard"
@@ -605,6 +617,18 @@ export default function Home() {
               </button>
             </div>
           )}
+
+          {/* Send queue */}
+          <SendQueue
+            key={queueVersion}
+            queue={pendingFilesRef.current.map(({ file, msgId }) => ({
+              file, msgId,
+              status:   messages.find((m) => m.id === msgId)?.status   || 'queued',
+              progress: messages.find((m) => m.id === msgId)?.progress || 0,
+            }))}
+            onReorder={reorderQueue}
+            onCancel={cancelQueuedFile}
+          />
 
           {/* Chat input */}
           <ChatInput
