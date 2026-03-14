@@ -1,8 +1,7 @@
 import { useRef, useCallback } from 'react';
 
-const CHUNK_SIZE = 64 * 1024; // 64 KB
+const CHUNK_SIZE = 64 * 1024;
 
-// Only STUN — no dead/external TURN servers needed
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -19,10 +18,11 @@ export function useWebRTC({
   onConnected,
   onTransferError,
   onChatMessage,
+  onTyping,
   onStateChange,
   encryptChunk,
   decryptChunk,
-  wsSend,             // signaling send fn passed from page.js for relay fallback
+  wsSend,
 }) {
   const pcRef = useRef(null);
   const dcRef = useRef(null);
@@ -34,7 +34,7 @@ export function useWebRTC({
   const pendingCandidates = useRef([]);
   const isRelayMode = useRef(false);
 
-  // ── Shared receive logic (DataChannel + WS relay both use this) ────────
+  // ── Shared chunk receiver ──────────────────────────────────────────────
   const processIncomingChunk = useCallback(async (rawChunk, isBase64 = false) => {
     const meta = fileMeta.current;
     if (!meta) return;
@@ -108,6 +108,11 @@ export function useWebRTC({
         let message;
         try { message = JSON.parse(data); } catch { return; }
 
+        if (message.kind === 'typing') {
+          onTyping?.();
+          return;
+        }
+
         if (message.kind === 'chat') {
           onChatMessage?.({ text: message.text, timestamp: message.timestamp, id: message.id });
           return;
@@ -134,19 +139,23 @@ export function useWebRTC({
         await processIncomingChunk(data, false);
       }
     };
-  }, [onConnected, onFileMeta, onChatMessage, processIncomingChunk, processTransferDone]);
+  }, [onConnected, onFileMeta, onChatMessage, onTyping, processIncomingChunk, processTransferDone]);
 
-  // ── WS Relay: incoming relay messages routed here from page.js ─────────
+  // ── WS Relay incoming ──────────────────────────────────────────────────
   const handleRelayMessage = useCallback(async (payload) => {
     if (!payload?.kind) return;
 
     if (payload.kind === 'relay-connected') {
-      // Peer signaled it's switching to relay too
       if (!isRelayMode.current) {
         isRelayMode.current = true;
         onStateChange?.('relay');
         onConnected?.();
       }
+      return;
+    }
+
+    if (payload.kind === 'typing') {
+      onTyping?.();
       return;
     }
 
@@ -170,14 +179,14 @@ export function useWebRTC({
     }
 
     if (payload.kind === 'chunk') {
-      await processIncomingChunk(payload.data, true); // base64 string
+      await processIncomingChunk(payload.data, true);
       return;
     }
 
     if (payload.kind === 'done') {
       processTransferDone();
     }
-  }, [onChatMessage, onFileMeta, onStateChange, onConnected, processIncomingChunk, processTransferDone]);
+  }, [onChatMessage, onTyping, onFileMeta, onStateChange, onConnected, processIncomingChunk, processTransferDone]);
 
   // ── Peer Connection ────────────────────────────────────────────────────
   const createPeerConnection = useCallback(() => {
@@ -195,13 +204,11 @@ export function useWebRTC({
         console.warn('ICE failed — switching to WebSocket relay');
         isRelayMode.current = true;
         onStateChange?.('relay');
-        // Tell the other peer to also switch to relay
         wsSend?.({ type: 'relay', payload: { kind: 'relay-connected' } });
         onConnected?.();
       }
 
       if (pc.iceConnectionState === 'disconnected') {
-        // Wait 4 seconds before forcing relay to allow recovery
         setTimeout(() => {
           if (
             pc.iceConnectionState !== 'connected' &&
@@ -276,7 +283,18 @@ export function useWebRTC({
     }
   }, []);
 
-  // ── Send chat: auto-routes via DataChannel or WS relay ────────────────
+  // ── Typing indicator ───────────────────────────────────────────────────
+  const sendTyping = useCallback(() => {
+    if (isRelayMode.current) {
+      wsSend?.({ type: 'relay', payload: { kind: 'typing' } });
+      return;
+    }
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== 'open') return;
+    dc.send(JSON.stringify({ kind: 'typing' }));
+  }, [wsSend]);
+
+  // ── Chat message ───────────────────────────────────────────────────────
   const sendChatMessage = useCallback((text) => {
     const id =
       typeof crypto !== 'undefined' && crypto.randomUUID
@@ -294,7 +312,7 @@ export function useWebRTC({
     return true;
   }, [wsSend]);
 
-  // ── Send file: auto-routes via DataChannel or WS relay ────────────────
+  // ── File send ──────────────────────────────────────────────────────────
   const sendFile = useCallback(async (file) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
@@ -310,7 +328,6 @@ export function useWebRTC({
 
     try {
       if (isRelayMode.current) {
-        // ── WS Relay path ──────────────────────────────────────────────
         wsSend?.({ type: 'relay', payload: metaPayload });
 
         const buffer = await file.arrayBuffer();
@@ -343,7 +360,6 @@ export function useWebRTC({
           const speed = elapsed > 0 ? sent / elapsed : 0;
           onProgress?.({ percent, speed, sent, total: buffer.byteLength });
 
-          // Yield every 10 chunks to keep the UI responsive
           if (chunkIndex % 10 === 0) {
             await new Promise((r) => setTimeout(r, 0));
           }
@@ -353,7 +369,6 @@ export function useWebRTC({
         onProgress?.({ percent: 100, speed: 0, sent: file.size, total: file.size });
 
       } else {
-        // ── WebRTC DataChannel path ────────────────────────────────────
         const dc = dcRef.current;
         if (!dc || dc.readyState !== 'open') return;
 
@@ -364,7 +379,6 @@ export function useWebRTC({
         startTime.current = Date.now();
 
         while (offset < buffer.byteLength) {
-          // Back-pressure for large files
           if (dc.bufferedAmount > 16 * 1024 * 1024) {
             dc.bufferedAmountLowThreshold = 8 * 1024 * 1024;
             await new Promise((resolve) => {
@@ -442,8 +456,9 @@ export function useWebRTC({
     handleIceCandidate,
     sendFile,
     sendChatMessage,
+    sendTyping,
     getConnectionInfo,
     cleanup,
-    handleRelayMessage,   // consumed by page.js
+    handleRelayMessage,
   };
 }

@@ -17,6 +17,7 @@ function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// ── FileBubble ─────────────────────────────────────────────────────────
 function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
   const { mimeType = '', previewUrl, name, size, status = 'queued', progress = 0 } = msg;
   const isImg = mimeType.startsWith('image/');
@@ -24,10 +25,9 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
   const isAud = mimeType.startsWith('audio/');
   const isBusy = status === 'sending' || status === 'receiving';
   const hasPreview = (isImg || isVid || isAud) && previewUrl;
-
   const bubble = isMine
     ? 'bg-slate-900 text-white'
-    : 'bg-white border border-slate-200 text-slate-800';
+    : 'bg-white border border-slate-200 text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100';
 
   return (
     <div className={`w-64 sm:w-72 max-w-[80vw] rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
@@ -50,27 +50,27 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
       )}
       {!hasPreview && (
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100'}`}>
-            <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}>
+            <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-slate-500 dark:text-slate-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`truncate text-sm font-medium ${isMine ? 'text-white' : 'text-slate-800'}`}>{name}</p>
-            <p className={`text-xs ${isMine ? 'text-white/60' : 'text-slate-500'}`}>{formatSize(size)}</p>
+            <p className={`truncate text-sm font-medium ${isMine ? 'text-white' : 'text-slate-800 dark:text-slate-100'}`}>{name}</p>
+            <p className={`text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>{formatSize(size)}</p>
           </div>
         </div>
       )}
       {hasPreview && (
-        <p className={`truncate px-3 pt-1.5 text-xs ${isMine ? 'text-white/60' : 'text-slate-500'}`}>
+        <p className={`truncate px-3 pt-1.5 text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
           {name} · {formatSize(size)}
         </p>
       )}
       {isBusy && (
-        <div className={`mx-3 my-2 h-1 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200'}`}>
+        <div className={`mx-3 my-2 h-1 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'}`}>
           <div
-            className={`h-1 rounded-full transition-all duration-300 ${isMine ? 'bg-white' : 'bg-slate-700'}`}
+            className={`h-1 rounded-full transition-all duration-300 ${isMine ? 'bg-white' : 'bg-slate-700 dark:bg-slate-300'}`}
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -95,7 +95,7 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
           {!isMine && status === 'received' && (
             <button
               onClick={() => onDownload?.(msg)}
-              className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
             >
               {isImg || isVid ? 'Save' : 'Download'}
             </button>
@@ -114,6 +114,34 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
   );
 }
 
+// ── TypingIndicator ────────────────────────────────────────────────────
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start py-1">
+      <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-1">
+          <span
+            className="h-2 w-2 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce"
+            style={{ animationDelay: '0ms' }}
+          />
+          <span
+            className="h-2 w-2 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce"
+            style={{ animationDelay: '150ms' }}
+          />
+          <span
+            className="h-2 w-2 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce"
+            style={{ animationDelay: '300ms' }}
+          />
+        </div>
+        <span className="text-xs text-slate-400 dark:text-slate-500">typing…</span>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Main Page
+// ══════════════════════════════════════════════════════════════════════
 export default function Home() {
   const [mode, setMode] = useState(null);
   const [sessionCode, setSessionCode] = useState('');
@@ -126,6 +154,7 @@ export default function Home() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [rtcState, setRtcState] = useState('idle');
   const [showTimeout, setShowTimeout] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);   // ← typing indicator state
 
   const cryptoKeyRef = useRef(null);
   const autoJoinHandled = useRef(false);
@@ -135,7 +164,11 @@ export default function Home() {
   const currentSendingMsgIdRef = useRef(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);    // ← auto-hide timer
+  const typingSentAtRef = useRef(0);        // ← throttle outgoing typing signals
+  const handleRelayMessageRef = useRef(null);
 
+  // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) => {
     setMessages((prev) => [...prev, msg]);
   }, []);
@@ -153,8 +186,9 @@ export default function Home() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, peerTyping]);
 
+  // ── Crypto ─────────────────────────────────────────────────────────
   const setupDerivedKey = useCallback(async (secret) => {
     const key = await deriveKeyFromSecret(secret);
     cryptoKeyRef.current = key;
@@ -170,10 +204,7 @@ export default function Home() {
     return decryptChunk(cryptoKeyRef.current, data);
   }, []);
 
-  // ── handleSignal must be declared before useSignaling ─────────────────
-  // We use a ref so useWebRTC hooks can be declared after, then wired in
-  const handleRelayMessageRef = useRef(null);
-
+  // ── Signaling message handler ──────────────────────────────────────
   const handleSignal = useCallback((msg) => {
     switch (msg.type) {
       case 'created':
@@ -206,12 +237,12 @@ export default function Home() {
         handleIceCandidate(msg.payload);
         break;
       case 'relay':
-        // Route relay messages to WebRTC hook
         handleRelayMessageRef.current?.(msg.payload);
         break;
       case 'peer-disconnected':
         setStatus('waiting');
         pendingFilesRef.current = [];
+        setPeerTyping(false);
         addSystemMsg('Peer disconnected. Waiting for reconnect…');
         setErrorMsg('');
         break;
@@ -234,12 +265,13 @@ export default function Home() {
     handleIceCandidate,
     sendFile,
     sendChatMessage,
+    sendTyping,
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
   } = useWebRTC({
     onSignal: ({ type, payload }) => send({ type, payload }),
-    wsSend: send,   // ← relay fallback uses the same WS connection
+    wsSend: send,
 
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
@@ -305,6 +337,9 @@ export default function Home() {
     },
 
     onChatMessage: ({ text, id, timestamp }) => {
+      // Clear typing indicator the moment a real message arrives
+      setPeerTyping(false);
+      clearTimeout(typingTimeoutRef.current);
       addMsg({
         id: id || genId(),
         type: 'text',
@@ -312,6 +347,13 @@ export default function Home() {
         text,
         timestamp: timestamp || Date.now(),
       });
+    },
+
+    // ← typing indicator callback
+    onTyping: () => {
+      setPeerTyping(true);
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => setPeerTyping(false), 2500);
     },
 
     onStateChange: (state) => {
@@ -327,12 +369,12 @@ export default function Home() {
     decryptChunk: decryptFn,
   });
 
-  // Wire relay handler into the ref so handleSignal can call it
+  // Wire relay handler ref
   useEffect(() => {
     handleRelayMessageRef.current = handleRelayMessage;
   }, [handleRelayMessage]);
 
-  // ── Auto-join from URL ─────────────────────────────────────────────────
+  // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
     if (autoJoinHandled.current) return;
     if (wsState !== 'connected') return;
@@ -352,7 +394,7 @@ export default function Home() {
     window.history.replaceState({}, '', window.location.pathname);
   }, [wsState, send, setupDerivedKey]);
 
-  // ── Room actions ───────────────────────────────────────────────────────
+  // ── Room actions ───────────────────────────────────────────────────
   const startSend = () => {
     setErrorMsg('');
     setMode('send');
@@ -393,13 +435,15 @@ export default function Home() {
     setErrorMsg('');
     setConnectionType(null);
     setRtcState('idle');
+    setPeerTyping(false);
     cryptoKeyRef.current = null;
     sendingLoopRunning.current = false;
     currentSendingMsgIdRef.current = null;
     receivingMsgIdRef.current = null;
+    clearTimeout(typingTimeoutRef.current);
   };
 
-  // ── Send loop ──────────────────────────────────────────────────────────
+  // ── Send loop ──────────────────────────────────────────────────────
   const runSendLoop = useCallback(async () => {
     if (sendingLoopRunning.current) return;
     sendingLoopRunning.current = true;
@@ -438,7 +482,7 @@ export default function Home() {
     }
   }, [status, runSendLoop]);
 
-  // ── Attach files ───────────────────────────────────────────────────────
+  // ── Attach files ───────────────────────────────────────────────────
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
@@ -470,6 +514,7 @@ export default function Home() {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   }, [status]);
 
+  // ── Send text ──────────────────────────────────────────────────────
   const handleSendText = useCallback(() => {
     const text = chatInput.trim();
     if (!text) return;
@@ -478,6 +523,7 @@ export default function Home() {
     setChatInput('');
   }, [chatInput, sendChatMessage, addMsg]);
 
+  // ── Download ───────────────────────────────────────────────────────
   const downloadMsg = useCallback((msg) => {
     if (msg.previewUrl) {
       const a = document.createElement('a');
@@ -498,22 +544,27 @@ export default function Home() {
 
   const chatReady = status === 'connected' || status === 'transferring';
 
+  // ══════════════════════════════════════════════════════════════════
+  //  Render
+  // ══════════════════════════════════════════════════════════════════
   return (
-    <main className="flex min-h-screen flex-col bg-slate-100">
+    <main className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
 
       {/* ════════  CHAT VIEW  ════════ */}
       {chatReady && (
         <div className="flex h-screen flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
+
+          {/* Header */}
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 onClick={reset}
-                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors sm:px-3"
+                className="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors sm:px-3"
               >
                 ← Leave
               </button>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">
+                <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
                 </p>
                 <p className="text-[10px] text-slate-400 sm:text-[11px]">
@@ -526,17 +577,19 @@ export default function Home() {
             </div>
           </header>
 
+          {/* Messages */}
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 sm:px-4 sm:py-5">
             {messages.length === 0 && (
               <p className="mt-12 text-center text-xs text-slate-400">
                 Say hi, or tap the paperclip to send a file 📎
               </p>
             )}
+
             {messages.map((msg) => {
               if (msg.type === 'system') {
                 return (
                   <div key={msg.id} className="flex justify-center py-1">
-                    <span className="rounded-full bg-slate-200 px-3 py-1 text-[11px] text-slate-500">
+                    <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
                       {msg.text}
                     </span>
                   </div>
@@ -548,10 +601,10 @@ export default function Home() {
                   <div className="max-w-[85%] sm:max-w-[75%] min-w-0">
                     {msg.type === 'text' && (
                       <div
-                        className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap wrap-break-word ${
+                        className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
                           isMine
                             ? 'rounded-br-sm bg-slate-900 text-white'
-                            : 'rounded-bl-sm bg-white border border-slate-200 text-slate-800'
+                            : 'rounded-bl-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100'
                         }`}
                       >
                         {msg.text}
@@ -573,9 +626,14 @@ export default function Home() {
                 </div>
               );
             })}
+
+            {/* ── Typing indicator ── */}
+            {peerTyping && <TypingIndicator />}
+
             <div ref={chatEndRef} />
           </div>
 
+          {/* Error banner */}
           {errorMsg && (
             <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-center text-xs text-red-700">
               {errorMsg}
@@ -585,14 +643,15 @@ export default function Home() {
             </div>
           )}
 
-          <div className="shrink-0 border-t border-slate-200 bg-white px-2 py-2 sm:px-4 sm:py-3">
+          {/* Input bar */}
+          <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-2 sm:px-4 sm:py-3">
             <div className="flex items-end gap-1.5 sm:gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach files"
-                className="shrink-0 rounded-xl border border-slate-300 bg-white p-2 sm:p-2.5 text-slate-500 hover:bg-slate-100 transition-colors"
+                className="shrink-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 sm:p-2.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
-                <svg className="h-5 w-5 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                 </svg>
@@ -609,7 +668,15 @@ export default function Home() {
               />
               <textarea
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+                onChange={(e) => {
+                  setChatInput(e.target.value);
+                  // Throttle typing signal — max once per 1.5 seconds
+                  const now = Date.now();
+                  if (now - typingSentAtRef.current > 1500) {
+                    typingSentAtRef.current = now;
+                    sendTyping?.();
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -618,16 +685,16 @@ export default function Home() {
                 }}
                 placeholder="Message…"
                 rows={1}
-                className="flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition-colors"
+                className="flex-1 resize-none rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-slate-500 dark:focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition-colors"
                 style={{ maxHeight: '120px', overflowY: 'auto' }}
               />
               <button
                 onClick={handleSendText}
                 disabled={!chatInput.trim()}
                 title="Send message"
-                className="shrink-0 rounded-xl bg-slate-900 p-2 sm:p-2.5 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="shrink-0 rounded-xl bg-slate-900 dark:bg-slate-100 p-2 sm:p-2.5 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="h-5 w-5 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
               </button>
@@ -639,13 +706,13 @@ export default function Home() {
       {/* ════════  LOBBY VIEW  ════════ */}
       {!chatReady && (
         <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
             <header className="mb-8 text-center">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                 Secure Peer-to-Peer
               </p>
-              <h1 className="text-3xl font-bold text-slate-900">FileShare &amp; Chat</h1>
-              <p className="mt-2 text-sm text-slate-500">
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">FileShare &amp; Chat</h1>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 WebRTC · End-to-end encrypted · No cloud storage
               </p>
             </header>
@@ -658,13 +725,13 @@ export default function Home() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <button
                   onClick={startSend}
-                  className="rounded-xl bg-slate-900 px-6 py-4 text-base font-semibold text-white hover:bg-slate-700 transition-colors"
+                  className="rounded-xl bg-slate-900 dark:bg-slate-100 px-6 py-4 text-base font-semibold text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors"
                 >
                   Start Session
                 </button>
                 <button
                   onClick={startReceive}
-                  className="rounded-xl border border-slate-300 bg-white px-6 py-4 text-base font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 py-4 text-base font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                 >
                   Join Session
                 </button>
@@ -683,13 +750,13 @@ export default function Home() {
 
             {mode && status === 'waiting' && (
               <div className="space-y-4">
-                <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 bg-slate-50 py-8 text-center">
+                <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-8 text-center">
                   <div className="relative">
-                    <span className="absolute inset-0 block h-full w-full animate-ping rounded-full bg-slate-200 opacity-75" />
-                    <span className="relative block h-3 w-3 rounded-full bg-slate-400" />
+                    <span className="absolute inset-0 block h-full w-full animate-ping rounded-full bg-slate-200 dark:bg-slate-600 opacity-75" />
+                    <span className="relative block h-3 w-3 rounded-full bg-slate-400 dark:bg-slate-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-700">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                       {mode === 'send' ? 'Waiting for peer to join…' : 'Connecting to session…'}
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400 uppercase tracking-widest">
@@ -712,15 +779,14 @@ export default function Home() {
                 )}
 
                 {showTimeout && rtcState !== 'connected' && rtcState !== 'relay' && (
-                  <div className="animate-in fade-in slide-in-from-top-2 duration-500 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-slate-700">Taking longer than expected?</p>
-                    <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-                      If the session doesn't start soon, your network may be restricting connections.
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-500 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Taking longer than expected?</p>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                       The app will automatically switch to relay mode. Please wait a moment.
                     </p>
                     <button
                       onClick={reset}
-                      className="mt-3 w-full rounded-lg border border-slate-300 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-600 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                     >
                       Cancel and Try Again
                     </button>
@@ -738,7 +804,7 @@ export default function Home() {
             {mode && (
               <button
                 onClick={reset}
-                className="mt-6 w-full rounded-xl border border-slate-300 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+                className="mt-6 w-full rounded-xl border border-slate-300 dark:border-slate-700 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 Start Over
               </button>
