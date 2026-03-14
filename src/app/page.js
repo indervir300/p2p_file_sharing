@@ -1,53 +1,52 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSignaling } from '@/hooks/useSignaling';
-import { useWebRTC } from '@/hooks/useWebRTC';
+import { useSignaling }   from '@/hooks/useSignaling';
+import { useWebRTC }      from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 
-// Components
-import SessionCode from '@/app/components/SessionCode';
-import ConnectionStatus from '@/app/components/ConnectionStatus';
-import MessageBubble from '@/app/components/chat/MessageBubble';
-import FileBubble from '@/app/components/chat/FileBubble';
-import TypingIndicator from '@/app/components/chat/TypingIndicator';
-import ChatInput from '@/app/components/chat/ChatInput';
-import PeerAvatar from '@/app/components/chat/PeerAvatar';
-import DarkModeToggle from '@/app/components/ui/DarkModeToggle';
-
+import SessionCode        from '@/app/components/SessionCode';
+import ConnectionStatus   from '@/app/components/ConnectionStatus';
+import DarkModeToggle     from '@/app/components/ui/DarkModeToggle';
+import PeerAvatar         from '@/app/components/chat/PeerAvatar';
+import MessageBubble      from '@/app/components/chat/MessageBubble';
+import FileBubble         from '@/app/components/chat/FileBubble';
+import TypingIndicator    from '@/app/components/chat/TypingIndicator';
+import ChatInput          from '@/app/components/chat/ChatInput';
+import Whiteboard         from '@/app/components/whiteboard/Whiteboard';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export default function Home() {
-  const [mode, setMode] = useState(null);
-  const [sessionCode, setSessionCode] = useState('');
-  const [roomToken, setRoomToken] = useState('');
-  const [status, setStatus] = useState('idle');
+  // ── Core state ─────────────────────────────────────────────────────
+  const [mode, setMode]                     = useState(null);
+  const [sessionCode, setSessionCode]       = useState('');
+  const [roomToken, setRoomToken]           = useState('');
+  const [status, setStatus]                 = useState('idle');
   const [connectionType, setConnectionType] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [rtcState, setRtcState] = useState('idle');
-  const [showTimeout, setShowTimeout] = useState(false);
-  const [peerTyping, setPeerTyping] = useState(false);
-  const [statsData, setStatsData] = useState(null);
-  const [speedHistory, setSpeedHistory] = useState([]);
+  const [errorMsg, setErrorMsg]             = useState('');
+  const [messages, setMessages]             = useState([]);
+  const [lightboxUrl, setLightboxUrl]       = useState(null);
+  const [rtcState, setRtcState]             = useState('idle');
+  const [showTimeout, setShowTimeout]       = useState(false);
+  const [peerTyping, setPeerTyping]         = useState(false);
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
 
-  const cryptoKeyRef = useRef(null);
-  const autoJoinHandled = useRef(false);
-  const pendingFilesRef = useRef([]);
-  const sendingLoopRunning = useRef(false);
-  const receivingMsgIdRef = useRef(null);
+  // ── Refs ───────────────────────────────────────────────────────────
+  const cryptoKeyRef           = useRef(null);
+  const autoJoinHandled        = useRef(false);
+  const pendingFilesRef        = useRef([]);
+  const sendingLoopRunning     = useRef(false);
+  const receivingMsgIdRef      = useRef(null);
   const currentSendingMsgIdRef = useRef(null);
-  const chatEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
-  const handleRelayMessageRef = useRef(null);
-  const lastSpeedUpdateRef = useRef(0);
-  const sendReactionRef = useRef(null); // keeps sendReaction stable in handleReaction
+  const chatEndRef             = useRef(null);
+  const typingTimeoutRef       = useRef(null);
+  const handleRelayMessageRef  = useRef(null);
+  const sendReactionRef        = useRef(null);
+  const whiteboardRef          = useRef(null);
 
-
-  // ── Message helpers ──────────────────────────────────────────────────
+  // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) => setMessages((prev) => [...prev, msg]), []);
 
   const addSystemMsg = useCallback((text) => {
@@ -65,7 +64,7 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, peerTyping]);
 
-  // ── Crypto ────────────────────────────────────────────────────────────
+  // ── Crypto ─────────────────────────────────────────────────────────
   const setupDerivedKey = useCallback(async (secret) => {
     cryptoKeyRef.current = await deriveKeyFromSecret(secret);
   }, []);
@@ -80,60 +79,47 @@ export default function Home() {
     return decryptChunk(cryptoKeyRef.current, data);
   }, []);
 
-  // ── Reaction handler ─────────────────────────────────────────────────
-  // fromPeer = true  → arrived over DataChannel, don't re-send
-  // fromPeer = false → local user tapped, send to peer
+  // ── Reaction handler ───────────────────────────────────────────────
   const handleReaction = useCallback((msgId, emoji, fromPeer = false) => {
     setMessages((prev) =>
       prev.map((m) => {
         if (m.id !== msgId) return m;
 
-        // Deep copy reactions
         const reactions = {};
-        Object.entries(m.reactions || {}).forEach(([e, r]) => {
-          reactions[e] = { ...r };
-        });
+        Object.entries(m.reactions || {}).forEach(([e, r]) => { reactions[e] = { ...r }; });
 
         if (fromPeer) {
-          // ── Peer reacted ────────────────────────────────────────────
-          // Remove peer's previous reaction (replace behavior)
+          // Remove peer's previous reaction (replace)
           Object.keys(reactions).forEach((e) => {
             if (reactions[e].peer) {
               reactions[e].peer = false;
               if (!reactions[e].mine) delete reactions[e];
             }
           });
-          // Add new peer reaction (emoji = null means peer removed theirs)
-          if (emoji) {
-            reactions[emoji] = { mine: reactions[emoji]?.mine || false, peer: true };
-          }
-
+          if (emoji) reactions[emoji] = { mine: reactions[emoji]?.mine || false, peer: true };
         } else {
-          // ── I reacted ───────────────────────────────────────────────
           const myPrevEmoji = Object.keys(reactions).find((e) => reactions[e].mine);
-
           if (myPrevEmoji === emoji) {
-            // Same emoji tapped → toggle off
+            // Toggle off
             reactions[emoji].mine = false;
             if (!reactions[emoji].peer) delete reactions[emoji];
-            sendReactionRef.current?.(msgId, null); // tell peer: removed
+            sendReactionRef.current?.(msgId, null);
           } else {
-            // Different emoji → remove old, set new (replace)
+            // Replace
             if (myPrevEmoji) {
               reactions[myPrevEmoji].mine = false;
               if (!reactions[myPrevEmoji].peer) delete reactions[myPrevEmoji];
             }
             reactions[emoji] = { mine: true, peer: reactions[emoji]?.peer || false };
-            sendReactionRef.current?.(msgId, emoji); // tell peer: new emoji
+            sendReactionRef.current?.(msgId, emoji);
           }
         }
-
         return { ...m, reactions };
       })
     );
   }, []);
 
-  // ── Signaling ────────────────────────────────────────────────────────
+  // ── Signaling handler ──────────────────────────────────────────────
   const handleSignal = useCallback((msg) => {
     switch (msg.type) {
       case 'created':
@@ -146,50 +132,39 @@ export default function Home() {
           setErrorMsg('Could not initialize encryption key. Please retry.');
         });
         break;
-
       case 'joined':
         setStatus('waiting');
         setErrorMsg('');
         break;
-
       case 'peer-joined':
         createOffer();
         break;
-
       case 'offer':
         handleOffer(msg.payload);
         break;
-
       case 'answer':
         handleAnswer(msg.payload);
         break;
-
       case 'ice-candidate':
         handleIceCandidate(msg.payload);
         break;
-
       case 'relay':
         handleRelayMessageRef.current?.(msg.payload);
         break;
-
       case 'peer-disconnected':
         setStatus('waiting');
         pendingFilesRef.current = [];
         setPeerTyping(false);
-        setStatsData(null);
         addSystemMsg('Peer disconnected. Waiting for reconnect…');
         setErrorMsg('');
         break;
-
       case 'left':
         setStatus('idle');
         break;
-
       case 'error':
         setErrorMsg(msg.payload.message);
         setStatus('error');
         break;
-
       default:
         break;
     }
@@ -206,6 +181,7 @@ export default function Home() {
     sendChatMessage,
     sendTyping,
     sendReaction,
+    sendWhiteboardEvent,
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
@@ -213,23 +189,14 @@ export default function Home() {
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
 
-    // ── Progress ──────────────────────────────────────────────────────
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
       if (activeId) updateMsg(activeId, { progress: p.percent });
-
-      const now = Date.now();
-      if (p.speed > 0 && now - lastSpeedUpdateRef.current > 1000) {
-        lastSpeedUpdateRef.current = now;
-        const mbps = parseFloat((p.speed / (1024 * 1024)).toFixed(3));
-        setSpeedHistory((prev) => [...prev.slice(-59), mbps]);
-      }
     },
 
     onFileMeta: ({ name, size, type }) => {
       const id = genId();
       receivingMsgIdRef.current = id;
-      setSpeedHistory([]);
       addMsg({
         id, type: 'file', sender: 'peer',
         name, size, mimeType: type,
@@ -243,8 +210,8 @@ export default function Home() {
       receivingMsgIdRef.current = null;
       const previewUrl =
         blob.type?.startsWith('image/') ||
-          blob.type?.startsWith('video/') ||
-          blob.type?.startsWith('audio/')
+        blob.type?.startsWith('video/') ||
+        blob.type?.startsWith('audio/')
           ? URL.createObjectURL(blob)
           : null;
       setMessages((prev) =>
@@ -263,12 +230,10 @@ export default function Home() {
         const info = await getConnectionInfo();
         if (info) {
           setConnectionType(info);
-          if (info.type === 'relay')
-            addSystemMsg('Using server relay — still encrypted 🔒');
+          if (info.type === 'relay') addSystemMsg('Using server relay — still encrypted 🔒');
         }
       }, 2000);
     },
-
 
     onTransferError: (message) => {
       setErrorMsg(message);
@@ -298,7 +263,9 @@ export default function Home() {
       handleReaction(msgId, emoji, fromPeer);
     },
 
-    onStats: (data) => setStatsData(data),
+    onWhiteboardEvent: (event) => {
+      whiteboardRef.current?.handlePeerEvent(event);
+    },
 
     onStateChange: (state) => {
       setRtcState(state);
@@ -312,15 +279,15 @@ export default function Home() {
     decryptChunk: decryptFn,
   });
 
-  // Keep sendReaction accessible in handleReaction without circular deps
-  useEffect(() => { sendReactionRef.current = sendReaction; }, [sendReaction]);
+  // Keep refs in sync
+  useEffect(() => { sendReactionRef.current     = sendReaction;     }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
 
-  // ── Auto-join from URL ───────────────────────────────────────────────
+  // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
     if (autoJoinHandled.current || wsState !== 'connected') return;
-    const params = new URLSearchParams(window.location.search);
-    const joinToken = params.get('join');
+    const params      = new URLSearchParams(window.location.search);
+    const joinToken   = params.get('join');
     const codeFromUrl = params.get('code');
     if (!joinToken) return;
     autoJoinHandled.current = true;
@@ -331,8 +298,8 @@ export default function Home() {
     window.history.replaceState({}, '', window.location.pathname);
   }, [wsState, send, setupDerivedKey]);
 
-  // ── Room actions ────────────────────────────────────────────────────
-  const startSend = () => { setErrorMsg(''); setMode('send'); send({ type: 'create' }); };
+  // ── Room actions ───────────────────────────────────────────────────
+  const startSend    = () => { setErrorMsg(''); setMode('send');    send({ type: 'create' }); };
   const startReceive = () => { setErrorMsg(''); setMode('receive'); setStatus('idle'); };
 
   const joinRoom = async (code) => {
@@ -346,33 +313,22 @@ export default function Home() {
     }
   };
 
-  const leaveRoom = useCallback(() => {
-    send({ type: 'leave' });
-    cleanup();
-  }, [send, cleanup]);
+  const leaveRoom = useCallback(() => { send({ type: 'leave' }); cleanup(); }, [send, cleanup]);
 
   const reset = () => {
     leaveRoom();
-    setMode(null);
-    setStatus('idle');
-    setSessionCode('');
-    setRoomToken('');
-    pendingFilesRef.current = [];
-    setMessages([]);
-    setErrorMsg('');
-    setConnectionType(null);
-    setRtcState('idle');
-    setPeerTyping(false);
-    setStatsData(null);
-    setSpeedHistory([]);
-    cryptoKeyRef.current = null;
-    sendingLoopRunning.current = false;
+    setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
+    pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
+    setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
+    setShowWhiteboard(false);
+    cryptoKeyRef.current           = null;
+    sendingLoopRunning.current     = false;
     currentSendingMsgIdRef.current = null;
-    receivingMsgIdRef.current = null;
+    receivingMsgIdRef.current      = null;
     clearTimeout(typingTimeoutRef.current);
   };
 
-  // ── Send loop ───────────────────────────────────────────────────────
+  // ── Send loop ──────────────────────────────────────────────────────
   const runSendLoop = useCallback(async () => {
     if (sendingLoopRunning.current) return;
     sendingLoopRunning.current = true;
@@ -382,14 +338,13 @@ export default function Home() {
         currentSendingMsgIdRef.current = msgId;
         updateMsg(msgId, { status: 'sending', progress: 0 });
         setStatus('transferring');
-        setSpeedHistory([]);
         await sendFile(file);
         currentSendingMsgIdRef.current = null;
         pendingFilesRef.current.shift();
         updateMsg(msgId, { status: 'sent', progress: 100 });
       }
     } finally {
-      sendingLoopRunning.current = false;
+      sendingLoopRunning.current     = false;
       currentSendingMsgIdRef.current = null;
       setStatus('connected');
     }
@@ -410,11 +365,11 @@ export default function Home() {
     if (status === 'connected' && pendingFilesRef.current.length > 0) runSendLoop();
   }, [status, runSendLoop]);
 
-  // ── File attach ─────────────────────────────────────────────────────
+  // ── File attach ────────────────────────────────────────────────────
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
-      const id = genId();
+      const id         = genId();
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
       pendingFilesRef.current = [...pendingFilesRef.current, { file, msgId: id }];
       return {
@@ -435,29 +390,20 @@ export default function Home() {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   }, [status]);
 
-  // ── Send text ───────────────────────────────────────────────────────
+  // ── Send text ──────────────────────────────────────────────────────
   const handleSendText = useCallback((text) => {
     if (!text) return;
-    const id = sendChatMessage?.(text);    // ← use the returned id
+    const id = sendChatMessage?.(text);
     if (id === false || !id) return;
-    addMsg({
-      id,                                  // ← same id the peer will receive
-      type: 'text',
-      sender: 'me',
-      text,
-      timestamp: Date.now(),
-    });
+    addMsg({ id, type: 'text', sender: 'me', text, timestamp: Date.now() });
   }, [sendChatMessage, addMsg]);
 
-
-  // ── Download ────────────────────────────────────────────────────────
+  // ── Download ───────────────────────────────────────────────────────
   const downloadMsg = useCallback((msg) => {
     const url = msg.previewUrl || (msg.blob ? URL.createObjectURL(msg.blob) : null);
     if (!url) return;
     const a = document.createElement('a');
-    a.href = url;
-    a.download = msg.name;
-    a.click();
+    a.href = url; a.download = msg.name; a.click();
     if (msg.blob && !msg.previewUrl) setTimeout(() => URL.revokeObjectURL(url), 1500);
   }, []);
 
@@ -476,8 +422,10 @@ export default function Home() {
           {/* Header */}
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-3 shadow-sm sm:px-4">
             <div className="flex items-center gap-2 min-w-0 sm:gap-3">
-              <button onClick={reset}
-                className="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors sm:px-3">
+              <button
+                onClick={reset}
+                className="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors sm:px-3"
+              >
                 ← Leave
               </button>
               <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -485,11 +433,21 @@ export default function Home() {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {/* Whiteboard button */}
+              <button
+                onClick={() => setShowWhiteboard(true)}
+                title="Open whiteboard"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M15.232 5.232l3.536 3.536M9 11l6-6 3.536 3.536-6 6H9v-3.536z" />
+                </svg>
+              </button>
               <DarkModeToggle />
               <PeerAvatar connectionType={connectionType} />
             </div>
           </header>
-
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 sm:px-4 sm:py-5 bg-slate-50 dark:bg-slate-950">
@@ -512,12 +470,8 @@ export default function Home() {
 
               const isMine = msg.sender === 'me';
               return (
-                <div
-                  key={msg.id}
-                  className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
-                >
+                <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className="max-w-[85%] min-w-0 sm:max-w-[75%]">
-
                     {msg.type === 'text' && (
                       <MessageBubble
                         msg={msg}
@@ -525,7 +479,6 @@ export default function Home() {
                         onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
                       />
                     )}
-
                     {msg.type === 'file' && (
                       <FileBubble
                         msg={msg}
@@ -535,14 +488,9 @@ export default function Home() {
                         onCancel={cancelQueuedFile}
                       />
                     )}
-
                     <p className={`mt-0.5 text-[10px] text-slate-400 ${isMine ? 'text-right' : 'text-left'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
-
                   </div>
                 </div>
               );
@@ -554,7 +502,7 @@ export default function Home() {
 
           {/* Error banner */}
           {errorMsg && (
-            <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-center text-xs text-red-700">
+            <div className="shrink-0 bg-red-50 dark:bg-red-950 px-4 py-2 text-center text-xs text-red-700 dark:text-red-300">
               {errorMsg}
               <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
                 Dismiss
@@ -569,6 +517,14 @@ export default function Home() {
             onTyping={sendTyping}
           />
 
+          {/* Whiteboard overlay */}
+          {showWhiteboard && (
+            <Whiteboard
+              ref={whiteboardRef}
+              onSendEvent={sendWhiteboardEvent}
+              onClose={() => setShowWhiteboard(false)}
+            />
+          )}
         </div>
       )}
 
@@ -577,11 +533,9 @@ export default function Home() {
         <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
 
-            {/* Dark mode toggle — top right of card */}
             <div className="flex justify-end mb-2">
               <DarkModeToggle />
             </div>
-
 
             <header className="mb-8 text-center">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
@@ -603,13 +557,13 @@ export default function Home() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <button
                   onClick={startSend}
-                  className="rounded-xl bg-slate-900 px-6 py-4 text-base font-semibold text-white hover:bg-slate-700 transition-colors"
+                  className="rounded-xl bg-slate-900 dark:bg-slate-100 px-6 py-4 text-base font-semibold text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors"
                 >
                   Start Session
                 </button>
                 <button
                   onClick={startReceive}
-                  className="rounded-xl border border-slate-300 bg-white px-6 py-4 text-base font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 py-4 text-base font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                 >
                   Join Session
                 </button>
@@ -626,13 +580,13 @@ export default function Home() {
 
             {mode && status === 'waiting' && (
               <div className="space-y-4">
-                <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 bg-slate-50 py-8 text-center">
+                <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-8 text-center">
                   <div className="relative">
-                    <span className="absolute inset-0 block h-full w-full animate-ping rounded-full bg-slate-200 opacity-75" />
-                    <span className="relative block h-3 w-3 rounded-full bg-slate-400" />
+                    <span className="absolute inset-0 block h-full w-full animate-ping rounded-full bg-slate-200 dark:bg-slate-600 opacity-75" />
+                    <span className="relative block h-3 w-3 rounded-full bg-slate-400 dark:bg-slate-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-700">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                       {mode === 'send' ? 'Waiting for peer to join…' : 'Connecting to session…'}
                     </p>
                     <p className="mt-1 text-[11px] uppercase tracking-widest text-slate-400">
@@ -642,7 +596,7 @@ export default function Home() {
                 </div>
 
                 {(rtcState === 'failed' || rtcState === 'relay') && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
                     <p className="font-semibold">
                       {rtcState === 'relay' ? 'Switched to relay mode' : 'Connection failed'}
                     </p>
@@ -655,16 +609,16 @@ export default function Home() {
                 )}
 
                 {showTimeout && rtcState !== 'connected' && rtcState !== 'relay' && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-slate-700">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                       Taking longer than expected?
                     </p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                       The app will automatically switch to relay mode. Please wait.
                     </p>
                     <button
                       onClick={reset}
-                      className="mt-3 w-full rounded-lg border border-slate-300 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-600 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                     >
                       Cancel and Try Again
                     </button>
@@ -674,7 +628,7 @@ export default function Home() {
             )}
 
             {errorMsg && (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+              <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 px-4 py-3 text-center text-sm text-red-700 dark:text-red-300">
                 {errorMsg}
               </div>
             )}
@@ -682,7 +636,7 @@ export default function Home() {
             {mode && (
               <button
                 onClick={reset}
-                className="mt-6 w-full rounded-xl border border-slate-300 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+                className="mt-6 w-full rounded-xl border border-slate-300 dark:border-slate-700 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 Start Over
               </button>
@@ -691,7 +645,6 @@ export default function Home() {
             <footer className="mt-8 text-center text-xs text-slate-400">
               Transfers are device-to-device via WebRTC. Falls back to encrypted server relay when needed.
             </footer>
-
           </div>
         </div>
       )}
