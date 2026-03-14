@@ -3,10 +3,12 @@ import { useRef, useCallback } from 'react';
 const CHUNK_SIZE = 64 * 1024; // 64 KB
 
 const ICE_SERVERS = [
-  // Google STUN
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  // Free TURN servers from OpenRelay (metered.ca) — 100% free, no signup
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  // OpenRelay TURN servers
   {
     urls: 'turn:openrelay.metered.ca:80',
     username: 'openrelayproject',
@@ -17,14 +19,9 @@ const ICE_SERVERS = [
     username: 'openrelayproject',
     credential: 'openrelayproject',
   },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
 ];
 
-export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, onConnected, onTransferError, onChatMessage, encryptChunk, decryptChunk }) {
+export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, onConnected, onTransferError, onChatMessage, onStateChange, encryptChunk, decryptChunk }) {
   const pcRef = useRef(null);
   const dcRef = useRef(null);
   const recvBuffers = useRef([]);
@@ -33,16 +30,21 @@ export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, on
   const startTime = useRef(null);
   const sendingRef = useRef(false);
 
+  const pendingCandidates = useRef([]);
+  
   const setupDataChannel = useCallback((dc) => {
     dc.binaryType = 'arraybuffer';
 
-    if (dc.readyState === 'open') {
+    dc.onopen = () => {
+      console.log('DataChannel OPEN');
       onConnected?.();
-    } else {
-      dc.onopen = () => onConnected?.();
-    }
+    };
+    
+    dc.onerror = (err) => console.error('DataChannel Error:', err);
+    dc.onclose = () => console.log('DataChannel CLOSED');
 
     dc.onmessage = async ({ data }) => {
+      // ... (existing logic remains same)
       if (typeof data === 'string') {
         let message;
         try {
@@ -132,12 +134,27 @@ export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, on
 
   const createPeerConnection = useCallback(() => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) onSignal({ type: 'ice-candidate', payload: candidate });
     };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE Connection State:', pc.iceConnectionState);
+      onStateChange?.(pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        onTransferError?.('Network connection failed. This often happens on mobile data or restrictive corporate networks.');
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('Peer Connection State:', pc.connectionState);
+      onStateChange?.(pc.connectionState);
+    };
+
     pcRef.current = pc;
     return pc;
-  }, [onSignal]);
+  }, [onSignal, onTransferError]);
 
   const createOffer = useCallback(async () => {
     const pc = createPeerConnection();
@@ -158,17 +175,37 @@ export function useWebRTC({ onSignal, onProgress, onFileMeta, onFileReceived, on
       setupDataChannel(channel);
     };
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    
+    // Process any candidates that arrived before the offer
+    while (pendingCandidates.current.length > 0) {
+      const cand = pendingCandidates.current.shift();
+      await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.warn('Delayed ICE failure:', e));
+    }
+    
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     onSignal({ type: 'answer', payload: answer });
   }, [createPeerConnection, setupDataChannel, onSignal]);
 
   const handleAnswer = useCallback(async (answer) => {
-    await pcRef.current?.setRemoteDescription(new RTCSessionDescription(answer));
+    const pc = pcRef.current;
+    if (!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    
+    // Process any candidates that arrived before the answer
+    while (pendingCandidates.current.length > 0) {
+      const cand = pendingCandidates.current.shift();
+      await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.warn('Delayed ICE failure:', e));
+    }
   }, []);
 
   const handleIceCandidate = useCallback(async (candidate) => {
-    await pcRef.current?.addIceCandidate(new RTCIceCandidate(candidate));
+    const pc = pcRef.current;
+    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn('ICE failure:', e));
+    } else {
+      pendingCandidates.current.push(candidate);
+    }
   }, []);
 
   const sendFile = useCallback(async (file) => {

@@ -151,6 +151,8 @@ export default function Home() {
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [rtcState, setRtcState] = useState('idle'); // idle | checking | connected | failed | etc.
+  const [showTimeout, setShowTimeout] = useState(false);
 
   const cryptoKeyRef = useRef(null);
   const autoJoinHandled = useRef(false);
@@ -216,12 +218,15 @@ export default function Home() {
         setErrorMsg('');
         break;
       case 'peer-joined':
+        addSystemMsg('Friend joined the room. Starting handshake...');
         createOffer();
         break;
       case 'offer':
+        addSystemMsg('Secure offer received. Connecting...');
         handleOffer(msg.payload);
         break;
       case 'answer':
+        addSystemMsg('Secure answer received. Finalizing...');
         handleAnswer(msg.payload);
         break;
       case 'ice-candidate':
@@ -320,6 +325,13 @@ export default function Home() {
       });
     },
 
+    onStateChange: (state) => {
+      setRtcState(state);
+      if (state === 'failed' || state === 'disconnected') {
+        addSystemMsg(`Connection ${state}. Retrying...`);
+      }
+    },
+
     encryptChunk: encryptFn,
     decryptChunk: decryptFn,
   });
@@ -384,6 +396,7 @@ export default function Home() {
     setChatInput('');
     setErrorMsg('');
     setConnectionType(null);
+    setRtcState('idle');
     cryptoKeyRef.current = null;
     sendingLoopRunning.current = false;
     currentSendingMsgIdRef.current = null;
@@ -411,6 +424,17 @@ export default function Home() {
       setStatus('connected');
     }
   }, [sendFile, updateMsg]);
+
+  useEffect(() => {
+    let timer;
+    if (status === 'waiting' && mode) {
+      setShowTimeout(false);
+      timer = setTimeout(() => setShowTimeout(true), 15000); // 15s timeout
+    } else {
+      setShowTimeout(false);
+    }
+    return () => clearTimeout(timer);
+  }, [status, mode]);
 
   useEffect(() => {
     if (status === 'connected' && pendingFilesRef.current.length > 0) {
@@ -689,29 +713,58 @@ export default function Home() {
               </div>
             )}
 
-            {/* Sender: show room code + shareable link */}
-            {mode === 'send' && (
-              <div className="space-y-4">
-                <SessionCode mode="send" code={sessionCode} token={roomToken} />
-                {status === 'waiting' && (
-                  <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-5">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400" />
-                    <p className="text-sm text-slate-500">Waiting for peer to join…</p>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Receiver: enter room code */}
             {mode === 'receive' && status === 'idle' && (
               <SessionCode mode="receive" onJoin={joinRoom} />
             )}
 
-            {/* Receiver: connecting... */}
-            {mode === 'receive' && status === 'waiting' && (
-              <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-5">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400" />
-                <p className="text-sm text-slate-500">Connecting to session…</p>
+            {/* Sender: show room code + shareable link */}
+            {mode === 'send' && (
+              <div className="space-y-4">
+                <SessionCode mode="send" code={sessionCode} token={roomToken} />
+              </div>
+            )}
+
+            {/* Connecting status for both sides */}
+            {mode && status === 'waiting' && (
+              <div className="space-y-4">
+                <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 bg-slate-50 py-8 text-center">
+                  <div className="relative">
+                    <span className="absolute inset-0 block h-full w-full animate-ping rounded-full bg-slate-200 opacity-75" />
+                    <span className="relative block h-3 w-3 rounded-full bg-slate-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">
+                      {mode === 'send' ? 'Waiting for peer to join…' : 'Connecting to session…'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400 uppercase tracking-widest">
+                      Status: {rtcState === 'idle' ? 'Negotiating' : rtcState.replace(/-/g, ' ')}
+                    </p>
+                  </div>
+                </div>
+
+                {rtcState === 'failed' && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <p className="font-semibold">Connection failed</p>
+                    <p className="mt-1 text-xs opacity-80">This usually happens on restricted networks. Try staying on the same Wi-Fi or using a different browser.</p>
+                  </div>
+                )}
+
+                {showTimeout && rtcState !== 'connected' && (
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-500 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-slate-700">Taking longer than expected?</p>
+                    <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                      If the session doesn't start soon, your network might be restricting P2P connections. 
+                      Try using a different device or network (e.g. mobile data).
+                    </p>
+                    <button 
+                      onClick={reset}
+                      className="mt-3 w-full rounded-lg border border-slate-300 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      Cancel and Try Again
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

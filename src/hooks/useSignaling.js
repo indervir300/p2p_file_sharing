@@ -13,7 +13,13 @@ export function useSignaling(onMessage) {
   onMessageRef.current = onMessage;
 
   const connect = useCallback(() => {
-    const url = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
+    let url = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
+    
+    // Auto-upgrade to wss if we are on an https page and not on localhost
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && !url.includes('localhost')) {
+      url = url.replace('ws://', 'wss://');
+    }
+
     setWsState('connecting');
 
     const ws = new WebSocket(url);
@@ -31,8 +37,8 @@ export function useSignaling(onMessage) {
       } catch { /* ignore malformed messages */ }
     };
 
-    ws.onerror = () => {
-      // Error will trigger onclose
+    ws.onerror = (err) => {
+      console.error('WebSocket Error:', err);
     };
 
     ws.onclose = () => {
