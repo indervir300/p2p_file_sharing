@@ -7,11 +7,11 @@ import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCryp
 // Components
 import SessionCode         from '@/app/components/SessionCode';
 import ConnectionStatus    from '@/app/components/ConnectionStatus';
-import NetworkBadge        from '@/components/connection/NetworkBadge';
-import MessageBubble       from '@/components/chat/MessageBubble';
-import FileBubble          from '@/components/chat/FileBubble';
-import TypingIndicator     from '@/components/chat/TypingIndicator';
-import ChatInput           from '@/components/chat/ChatInput';
+import NetworkBadge        from '@/app/components/connection/NetworkBadge';
+import MessageBubble       from '@/app/components/chat/MessageBubble';
+import FileBubble          from '@/app/components/chat/FileBubble';
+import TypingIndicator     from '@/app/components/chat/TypingIndicator';
+import ChatInput           from '@/app/components/chat/ChatInput';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
