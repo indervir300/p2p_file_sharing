@@ -27,25 +27,27 @@ export function useWebRTC({
   onTyping,
   onReaction,
   onWhiteboardEvent,
+  onMessageEdit,
+  onMessageDelete,
+  onLinkPreview,
   onStateChange,
   encryptChunk,
   decryptChunk,
   wsSend,
 }) {
-  const pcRef = useRef(null);
-  const dcRef = useRef(null);
-  const recvBuffers = useRef([]);
-  const recvSize = useRef(0);
-  const fileMeta = useRef(null);
-  const startTime = useRef(null);
-  const sendingRef = useRef(false);
+  const pcRef             = useRef(null);
+  const dcRef             = useRef(null);
+  const recvBuffers       = useRef([]);
+  const recvSize          = useRef(0);
+  const fileMeta          = useRef(null);
+  const startTime         = useRef(null);
+  const sendingRef        = useRef(false);
   const pendingCandidates = useRef([]);
-  const isRelayMode = useRef(false);
+  const isRelayMode       = useRef(false);
 
-  // ── Resumable transfer refs ────────────────────────────────────────
   const pendingTransferRef = useRef(null);
-  const recvTransferRef = useRef(null);
-  const abortSendRef = useRef(false);
+  const recvTransferRef    = useRef(null);
+  const abortSendRef       = useRef(false);
 
   // ── Control message sender ─────────────────────────────────────────
   const sendControl = useCallback((payload) => {
@@ -103,13 +105,14 @@ export function useWebRTC({
       }
 
       offset += CHUNK_SIZE;
-      const sent = Math.min(offset, buffer.byteLength);
+      const sent    = Math.min(offset, buffer.byteLength);
       const percent = Math.min(99, Math.round((sent / totalSize) * 100));
       const elapsed = (Date.now() - startTime.current) / 1000;
-      const speed = elapsed > 0 ? (sent - fromOffset) / elapsed : 0;
+      const speed   = elapsed > 0 ? (sent - fromOffset) / elapsed : 0;
       onProgress?.({ percent, speed, sent, total: totalSize });
 
-      if (Math.floor(offset / CHUNK_SIZE) % 10 === 0) await new Promise((r) => setTimeout(r, 0));
+      if (Math.floor(offset / CHUNK_SIZE) % 10 === 0)
+        await new Promise((r) => setTimeout(r, 0));
     }
     return true;
   }, [encryptChunk, wsSend, onProgress]);
@@ -132,7 +135,8 @@ export function useWebRTC({
     recvBuffers.current.push(chunk);
     recvSize.current += chunk.byteLength;
 
-    if (recvTransferRef.current) recvTransferRef.current.receivedBytes = recvSize.current;
+    if (recvTransferRef.current)
+      recvTransferRef.current.receivedBytes = recvSize.current;
 
     const chunkCount = Math.floor(recvSize.current / CHUNK_SIZE);
     if (chunkCount > 0 && chunkCount % 16 === 0 && recvTransferRef.current) {
@@ -145,7 +149,7 @@ export function useWebRTC({
 
     const percent = Math.min(99, Math.round((recvSize.current / meta.size) * 100));
     const elapsed = (Date.now() - startTime.current) / 1000;
-    const speed = elapsed > 0 ? recvSize.current / elapsed : 0;
+    const speed   = elapsed > 0 ? recvSize.current / elapsed : 0;
     onProgress?.({ percent, speed, received: Math.min(recvSize.current, meta.size), total: meta.size });
   }, [decryptChunk, onTransferError, onProgress, sendControl]);
 
@@ -170,13 +174,16 @@ export function useWebRTC({
   const processMessage = useCallback(async (message) => {
     const { kind } = message;
 
-    // Whiteboard — forward directly to component
+    // Whiteboard
     if (kind?.startsWith('wb-')) {
       onWhiteboardEvent?.(message);
       return;
     }
 
-    if (kind === 'typing') { onTyping?.(); return; }
+    if (kind === 'typing') {
+      onTyping?.();
+      return;
+    }
 
     if (kind === 'reaction') {
       onReaction?.({ msgId: message.msgId, emoji: message.emoji, fromPeer: true });
@@ -185,14 +192,28 @@ export function useWebRTC({
 
     if (kind === 'chat') {
       onChatMessage?.({
-        text: message.text,
+        text:      message.text,
         timestamp: message.timestamp,
-        id: message.id,
-        replyTo: message.replyTo || null,   // ← add this
+        id:        message.id,
+        replyTo:   message.replyTo || null,
       });
       return;
     }
 
+    if (kind === 'edit') {
+      onMessageEdit?.({ id: message.id, newText: message.newText });
+      return;
+    }
+
+    if (kind === 'delete') {
+      onMessageDelete?.({ id: message.id });
+      return;
+    }
+
+    if (kind === 'link-preview') {
+      onLinkPreview?.({ msgId: message.msgId, preview: message.preview });
+      return;
+    }
 
     if (kind === 'transfer-ack') {
       if (pendingTransferRef.current?.transferId === message.transferId)
@@ -242,6 +263,7 @@ export function useWebRTC({
     if (kind === 'done') processTransferDone();
   }, [
     onTyping, onReaction, onChatMessage, onWhiteboardEvent,
+    onMessageEdit, onMessageDelete, onLinkPreview,
     onProgress, onFileMeta, processTransferDone, sendBuffer, wsSend,
   ]);
 
@@ -281,24 +303,26 @@ export function useWebRTC({
 
     if (payload.kind === 'relay-connected') {
       if (!isRelayMode.current) {
-        isRelayMode.current = true;
+        isRelayMode.current  = true;
         abortSendRef.current = true;
         onStateChange?.('relay');
         onConnected?.();
         if (recvTransferRef.current) {
-          wsSend?.({
-            type: 'relay', payload: {
-              kind: 'resume-request',
-              transferId: recvTransferRef.current.transferId,
-              offset: recvTransferRef.current.receivedBytes,
-            }
-          });
+          wsSend?.({ type: 'relay', payload: {
+            kind:       'resume-request',
+            transferId: recvTransferRef.current.transferId,
+            offset:     recvTransferRef.current.receivedBytes,
+          }});
         }
       }
       return;
     }
 
-    if (payload.kind === 'chunk') { await processIncomingChunk(payload.data, true); return; }
+    if (payload.kind === 'chunk') {
+      await processIncomingChunk(payload.data, true);
+      return;
+    }
+
     await processMessage(payload);
   }, [onStateChange, onConnected, processMessage, processIncomingChunk, wsSend]);
 
@@ -333,7 +357,9 @@ export function useWebRTC({
       }
     };
 
-    pc.onconnectionstatechange = () => console.log('Peer Connection State:', pc.connectionState);
+    pc.onconnectionstatechange = () =>
+      console.log('Peer Connection State:', pc.connectionState);
+
     pcRef.current = pc;
     return pc;
   }, [onSignal, onStateChange, onConnected, wsSend]);
@@ -350,7 +376,10 @@ export function useWebRTC({
 
   const handleOffer = useCallback(async (offer) => {
     const pc = createPeerConnection();
-    pc.ondatachannel = ({ channel }) => { dcRef.current = channel; setupDataChannel(channel); };
+    pc.ondatachannel = ({ channel }) => {
+      dcRef.current = channel;
+      setupDataChannel(channel);
+    };
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     while (pendingCandidates.current.length > 0)
       await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.current.shift())).catch(console.warn);
@@ -378,26 +407,28 @@ export function useWebRTC({
 
   // ── Typing ─────────────────────────────────────────────────────────
   const sendTyping = useCallback(() => {
-    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload: { kind: 'typing' } }); return; }
+    if (isRelayMode.current) {
+      wsSend?.({ type: 'relay', payload: { kind: 'typing' } });
+      return;
+    }
     const dc = dcRef.current;
     if (dc?.readyState === 'open') dc.send(JSON.stringify({ kind: 'typing' }));
   }, [wsSend]);
 
   // ── Chat ───────────────────────────────────────────────────────────
   const sendChatMessage = useCallback((text, replyTo = null) => {
-    const id = makeId();
+    const id      = makeId();
     const payload = {
-      kind: 'chat',
+      kind:      'chat',
       text,
       timestamp: Date.now(),
       id,
-      // Only send the fields the peer needs to render the quote
       ...(replyTo && {
         replyTo: {
-          id: replyTo.id,
-          text: replyTo.text || null,
-          name: replyTo.name || null,
-          type: replyTo.type,
+          id:     replyTo.id,
+          text:   replyTo.text   || null,
+          name:   replyTo.name   || null,
+          type:   replyTo.type,
           sender: replyTo.sender,
         },
       }),
@@ -409,10 +440,33 @@ export function useWebRTC({
     return id;
   }, [wsSend]);
 
-
   // ── Reaction ───────────────────────────────────────────────────────
   const sendReaction = useCallback((msgId, emoji) => {
     const payload = { kind: 'reaction', msgId, emoji };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
+    const dc = dcRef.current;
+    if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
+  }, [wsSend]);
+
+  // ── Edit ───────────────────────────────────────────────────────────
+  const sendEdit = useCallback((id, newText) => {
+    const payload = { kind: 'edit', id, newText };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
+    const dc = dcRef.current;
+    if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
+  }, [wsSend]);
+
+  // ── Delete ─────────────────────────────────────────────────────────
+  const sendDelete = useCallback((id) => {
+    const payload = { kind: 'delete', id };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
+    const dc = dcRef.current;
+    if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
+  }, [wsSend]);
+
+  // ── Link preview ───────────────────────────────────────────────────
+  const sendLinkPreview = useCallback((msgId, preview) => {
+    const payload = { kind: 'link-preview', msgId, preview };
     if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
     const dc = dcRef.current;
     if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
@@ -429,14 +483,18 @@ export function useWebRTC({
   const sendFile = useCallback(async (file) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
-    const transferId = makeId();
+    const transferId  = makeId();
     const metaPayload = {
-      kind: 'meta', version: 2, name: file.name,
-      size: file.size, type: file.type, encrypted: !!encryptChunk,
+      kind: 'meta', version: 2,
+      name: file.name, size: file.size,
+      type: file.type, encrypted: !!encryptChunk,
     };
     try {
       const buffer = await file.arrayBuffer();
-      pendingTransferRef.current = { transferId, buffer, totalSize: file.size, ackedOffset: 0, metaPayload };
+      pendingTransferRef.current = {
+        transferId, buffer,
+        totalSize: file.size, ackedOffset: 0, metaPayload,
+      };
       abortSendRef.current = false;
       const done = await sendBuffer({
         transferId, buffer, fromOffset: 0,
@@ -464,11 +522,11 @@ export function useWebRTC({
       const stats = await pc.getStats();
       for (const [, report] of stats) {
         if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          const local = stats.get(report.localCandidateId);
+          const local  = stats.get(report.localCandidateId);
           const remote = stats.get(report.remoteCandidateId);
           return {
-            type: local?.candidateType || 'unknown',
-            relayed: local?.candidateType === 'relay' || remote?.candidateType === 'relay',
+            type:     local?.candidateType || 'unknown',
+            relayed:  local?.candidateType === 'relay' || remote?.candidateType === 'relay',
             protocol: local?.protocol || 'unknown',
           };
         }
@@ -497,6 +555,9 @@ export function useWebRTC({
     sendChatMessage,
     sendTyping,
     sendReaction,
+    sendEdit,
+    sendDelete,
+    sendLinkPreview,
     sendWhiteboardEvent,
     getConnectionInfo,
     cleanup,

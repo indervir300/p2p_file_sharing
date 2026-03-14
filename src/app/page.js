@@ -1,66 +1,68 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSignaling } from '@/hooks/useSignaling';
-import { useWebRTC } from '@/hooks/useWebRTC';
+import { useSignaling }  from '@/hooks/useSignaling';
+import { useWebRTC }     from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 
-import SessionCode from '@/app/components/SessionCode';
+import SessionCode      from '@/app/components/SessionCode';
 import ConnectionStatus from '@/app/components/ConnectionStatus';
-import DarkModeToggle from '@/app/components/ui/DarkModeToggle';
-import PeerAvatar from '@/app/components/chat/PeerAvatar';
-import MessageBubble from '@/app/components/chat/MessageBubble';
-import FileBubble from '@/app/components/chat/FileBubble';
-import TypingIndicator from '@/app/components/chat/TypingIndicator';
-import ChatInput from '@/app/components/chat/ChatInput';
-import Whiteboard from '@/app/components/whiteboard/Whiteboard';
+import DarkModeToggle   from '@/app/components/ui/DarkModeToggle';
+import PeerAvatar       from '@/app/components/chat/PeerAvatar';
+import MessageBubble    from '@/app/components/chat/MessageBubble';
+import FileBubble       from '@/app/components/chat/FileBubble';
+import TypingIndicator  from '@/app/components/chat/TypingIndicator';
+import ChatInput        from '@/app/components/chat/ChatInput';
+import Whiteboard       from '@/app/components/whiteboard/Whiteboard';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export default function Home() {
-  // ── Core state ─────────────────────────────────────────────────────
-  const [mode, setMode] = useState(null);
-  const [sessionCode, setSessionCode] = useState('');
-  const [roomToken, setRoomToken] = useState('');
-  const [status, setStatus] = useState('idle');
-  const [connectionType, setConnectionType] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [rtcState, setRtcState] = useState('idle');
-  const [showTimeout, setShowTimeout] = useState(false);
-  const [peerTyping, setPeerTyping] = useState(false);
-  const [showWhiteboard, setShowWhiteboard] = useState(false);
-  const [replyingTo, setReplyingTo] = useState(null);
+const URL_REGEX = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
 
+export default function Home() {
+
+  // ── State ──────────────────────────────────────────────────────────
+  const [mode, setMode]                     = useState(null);
+  const [sessionCode, setSessionCode]       = useState('');
+  const [roomToken, setRoomToken]           = useState('');
+  const [status, setStatus]                 = useState('idle');
+  const [connectionType, setConnectionType] = useState(null);
+  const [errorMsg, setErrorMsg]             = useState('');
+  const [messages, setMessages]             = useState([]);
+  const [lightboxUrl, setLightboxUrl]       = useState(null);
+  const [rtcState, setRtcState]             = useState('idle');
+  const [showTimeout, setShowTimeout]       = useState(false);
+  const [peerTyping, setPeerTyping]         = useState(false);
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [replyingTo, setReplyingTo]         = useState(null);
 
   // ── Refs ───────────────────────────────────────────────────────────
-  const cryptoKeyRef = useRef(null);
-  const autoJoinHandled = useRef(false);
-  const pendingFilesRef = useRef([]);
-  const sendingLoopRunning = useRef(false);
-  const receivingMsgIdRef = useRef(null);
+  const cryptoKeyRef           = useRef(null);
+  const autoJoinHandled        = useRef(false);
+  const pendingFilesRef        = useRef([]);
+  const sendingLoopRunning     = useRef(false);
+  const receivingMsgIdRef      = useRef(null);
   const currentSendingMsgIdRef = useRef(null);
-  const chatEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
-  const handleRelayMessageRef = useRef(null);
-  const sendReactionRef = useRef(null);
-  const whiteboardRef = useRef(null);
+  const chatEndRef             = useRef(null);
+  const typingTimeoutRef       = useRef(null);
+  const handleRelayMessageRef  = useRef(null);
+  const sendReactionRef        = useRef(null);
+  const whiteboardRef          = useRef(null);
 
   // ── Message helpers ────────────────────────────────────────────────
-  const addMsg = useCallback((msg) => setMessages((prev) => [...prev, msg]), []);
+  const addMsg = useCallback((msg) =>
+    setMessages((prev) => [...prev, msg]), []);
 
-  const addSystemMsg = useCallback((text) => {
+  const addSystemMsg = useCallback((text) =>
     setMessages((prev) => [
       ...prev,
       { id: genId(), type: 'system', text, timestamp: Date.now() },
-    ]);
-  }, []);
+    ]), []);
 
-  const updateMsg = useCallback((id, updates) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)));
-  }, []);
+  const updateMsg = useCallback((id, updates) =>
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, ...updates } : m))), []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -86,12 +88,12 @@ export default function Home() {
     setMessages((prev) =>
       prev.map((m) => {
         if (m.id !== msgId) return m;
-
         const reactions = {};
-        Object.entries(m.reactions || {}).forEach(([e, r]) => { reactions[e] = { ...r }; });
+        Object.entries(m.reactions || {}).forEach(([e, r]) => {
+          reactions[e] = { ...r };
+        });
 
         if (fromPeer) {
-          // Remove peer's previous reaction (replace)
           Object.keys(reactions).forEach((e) => {
             if (reactions[e].peer) {
               reactions[e].peer = false;
@@ -102,12 +104,10 @@ export default function Home() {
         } else {
           const myPrevEmoji = Object.keys(reactions).find((e) => reactions[e].mine);
           if (myPrevEmoji === emoji) {
-            // Toggle off
             reactions[emoji].mine = false;
             if (!reactions[emoji].peer) delete reactions[emoji];
             sendReactionRef.current?.(msgId, null);
           } else {
-            // Replace
             if (myPrevEmoji) {
               reactions[myPrevEmoji].mine = false;
               if (!reactions[myPrevEmoji].peer) delete reactions[myPrevEmoji];
@@ -121,7 +121,7 @@ export default function Home() {
     );
   }, []);
 
-  // ── Signaling handler ──────────────────────────────────────────────
+  // ── Signaling ──────────────────────────────────────────────────────
   const handleSignal = useCallback((msg) => {
     switch (msg.type) {
       case 'created':
@@ -183,6 +183,9 @@ export default function Home() {
     sendChatMessage,
     sendTyping,
     sendReaction,
+    sendEdit,
+    sendDelete,
+    sendLinkPreview,
     sendWhiteboardEvent,
     getConnectionInfo,
     cleanup,
@@ -191,11 +194,13 @@ export default function Home() {
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
 
+    // ── Progress ────────────────────────────────────────────────────
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
       if (activeId) updateMsg(activeId, { progress: p.percent });
     },
 
+    // ── File meta (receiver side) ───────────────────────────────────
     onFileMeta: ({ name, size, type }) => {
       const id = genId();
       receivingMsgIdRef.current = id;
@@ -207,13 +212,14 @@ export default function Home() {
       });
     },
 
+    // ── File received ───────────────────────────────────────────────
     onFileReceived: ({ blob }) => {
       const msgId = receivingMsgIdRef.current;
       receivingMsgIdRef.current = null;
       const previewUrl =
         blob.type?.startsWith('image/') ||
-          blob.type?.startsWith('video/') ||
-          blob.type?.startsWith('audio/')
+        blob.type?.startsWith('video/') ||
+        blob.type?.startsWith('audio/')
           ? URL.createObjectURL(blob)
           : null;
       setMessages((prev) =>
@@ -226,17 +232,20 @@ export default function Home() {
       setStatus('connected');
     },
 
+    // ── Connected ───────────────────────────────────────────────────
     onConnected: async () => {
       setStatus('connected');
       setTimeout(async () => {
         const info = await getConnectionInfo();
         if (info) {
           setConnectionType(info);
-          if (info.type === 'relay') addSystemMsg('Using server relay — still encrypted 🔒');
+          if (info.type === 'relay')
+            addSystemMsg('Using server relay — still encrypted 🔒');
         }
       }, 2000);
     },
 
+    // ── Transfer error ──────────────────────────────────────────────
     onTransferError: (message) => {
       setErrorMsg(message);
       if (receivingMsgIdRef.current) {
@@ -246,30 +255,56 @@ export default function Home() {
       setStatus('connected');
     },
 
+    // ── Chat message ────────────────────────────────────────────────
     onChatMessage: ({ text, id, timestamp, replyTo }) => {
       setPeerTyping(false);
       clearTimeout(typingTimeoutRef.current);
       addMsg({
         id: id || genId(), type: 'text', sender: 'peer',
         text, timestamp: timestamp || Date.now(),
-        replyTo: replyTo || null,                        // ← add this
+        replyTo: replyTo || null,
       });
     },
 
+    // ── Typing ──────────────────────────────────────────────────────
     onTyping: () => {
       setPeerTyping(true);
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => setPeerTyping(false), 2500);
     },
 
+    // ── Reaction ────────────────────────────────────────────────────
     onReaction: ({ msgId, emoji, fromPeer }) => {
       handleReaction(msgId, emoji, fromPeer);
     },
 
+    // ── Whiteboard ──────────────────────────────────────────────────
     onWhiteboardEvent: (event) => {
       whiteboardRef.current?.handlePeerEvent(event);
     },
 
+    // ── Edit ────────────────────────────────────────────────────────
+    onMessageEdit: ({ id, newText }) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === id ? { ...m, text: newText, edited: true } : m)
+      );
+    },
+
+    // ── Delete ──────────────────────────────────────────────────────
+    onMessageDelete: ({ id }) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === id ? { ...m, deleted: true } : m)
+      );
+    },
+
+    // ── Link preview ────────────────────────────────────────────────
+    onLinkPreview: ({ msgId, preview }) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === msgId ? { ...m, linkPreview: preview } : m)
+      );
+    },
+
+    // ── State change ────────────────────────────────────────────────
     onStateChange: (state) => {
       setRtcState(state);
       if (state === 'relay')
@@ -283,14 +318,14 @@ export default function Home() {
   });
 
   // Keep refs in sync
-  useEffect(() => { sendReactionRef.current = sendReaction; }, [sendReaction]);
+  useEffect(() => { sendReactionRef.current      = sendReaction;      }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
     if (autoJoinHandled.current || wsState !== 'connected') return;
-    const params = new URLSearchParams(window.location.search);
-    const joinToken = params.get('join');
+    const params      = new URLSearchParams(window.location.search);
+    const joinToken   = params.get('join');
     const codeFromUrl = params.get('code');
     if (!joinToken) return;
     autoJoinHandled.current = true;
@@ -302,7 +337,7 @@ export default function Home() {
   }, [wsState, send, setupDerivedKey]);
 
   // ── Room actions ───────────────────────────────────────────────────
-  const startSend = () => { setErrorMsg(''); setMode('send'); send({ type: 'create' }); };
+  const startSend    = () => { setErrorMsg(''); setMode('send');    send({ type: 'create' }); };
   const startReceive = () => { setErrorMsg(''); setMode('receive'); setStatus('idle'); };
 
   const joinRoom = async (code) => {
@@ -316,18 +351,21 @@ export default function Home() {
     }
   };
 
-  const leaveRoom = useCallback(() => { send({ type: 'leave' }); cleanup(); }, [send, cleanup]);
+  const leaveRoom = useCallback(() => {
+    send({ type: 'leave' });
+    cleanup();
+  }, [send, cleanup]);
 
   const reset = () => {
     leaveRoom();
     setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
-    setShowWhiteboard(false);
-    cryptoKeyRef.current = null;
-    sendingLoopRunning.current = false;
+    setShowWhiteboard(false); setReplyingTo(null);
+    cryptoKeyRef.current           = null;
+    sendingLoopRunning.current     = false;
     currentSendingMsgIdRef.current = null;
-    receivingMsgIdRef.current = null;
+    receivingMsgIdRef.current      = null;
     clearTimeout(typingTimeoutRef.current);
   };
 
@@ -347,7 +385,7 @@ export default function Home() {
         updateMsg(msgId, { status: 'sent', progress: 100 });
       }
     } finally {
-      sendingLoopRunning.current = false;
+      sendingLoopRunning.current     = false;
       currentSendingMsgIdRef.current = null;
       setStatus('connected');
     }
@@ -372,7 +410,7 @@ export default function Home() {
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
-      const id = genId();
+      const id         = genId();
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
       pendingFilesRef.current = [...pendingFilesRef.current, { file, msgId: id }];
       return {
@@ -393,21 +431,60 @@ export default function Home() {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   }, [status]);
 
+  // ── Link preview fetcher ───────────────────────────────────────────
+  const fetchAndSendLinkPreview = useCallback(async (msgId, text) => {
+    const matches = text.match(URL_REGEX);
+    const url     = matches?.[0];
+    if (!url) return;
+    try {
+      const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`);
+      if (!res.ok) return;
+      const preview = await res.json();
+      if (preview.error) return;
+      setMessages((prev) =>
+        prev.map((m) => m.id === msgId ? { ...m, linkPreview: preview } : m)
+      );
+      sendLinkPreview(msgId, preview);
+    } catch { /* silent fail */ }
+  }, [sendLinkPreview]);
+
   // ── Send text ──────────────────────────────────────────────────────
   const handleSendText = useCallback((text) => {
     if (!text) return;
-    const id = sendChatMessage?.(text, replyingTo);   // ← pass replyingTo
+    const id = sendChatMessage?.(text, replyingTo);
     if (id === false || !id) return;
     addMsg({
       id, type: 'text', sender: 'me', text,
       timestamp: Date.now(),
-      replyTo: replyingTo                              // ← store in local message
-        ? { id: replyingTo.id, text: replyingTo.text, name: replyingTo.name, type: replyingTo.type, sender: replyingTo.sender }
+      replyTo: replyingTo
+        ? {
+            id:     replyingTo.id,
+            text:   replyingTo.text   || null,
+            name:   replyingTo.name   || null,
+            type:   replyingTo.type,
+            sender: replyingTo.sender,
+          }
         : null,
     });
-    setReplyingTo(null);                               // ← clear after send
-  }, [sendChatMessage, addMsg, replyingTo]);
+    setReplyingTo(null);
+    fetchAndSendLinkPreview(id, text);
+  }, [sendChatMessage, addMsg, replyingTo, fetchAndSendLinkPreview]);
 
+  // ── Edit ───────────────────────────────────────────────────────────
+  const handleEdit = useCallback((msgId, newText) => {
+    setMessages((prev) =>
+      prev.map((m) => m.id === msgId ? { ...m, text: newText, edited: true } : m)
+    );
+    sendEdit(msgId, newText);
+  }, [sendEdit]);
+
+  // ── Delete ─────────────────────────────────────────────────────────
+  const handleDelete = useCallback((msgId) => {
+    setMessages((prev) =>
+      prev.map((m) => m.id === msgId ? { ...m, deleted: true } : m)
+    );
+    sendDelete(msgId);
+  }, [sendDelete]);
 
   // ── Download ───────────────────────────────────────────────────────
   const downloadMsg = useCallback((msg) => {
@@ -444,7 +521,7 @@ export default function Home() {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Whiteboard button */}
+              {/* Whiteboard */}
               <button
                 onClick={() => setShowWhiteboard(true)}
                 title="Open whiteboard"
@@ -483,14 +560,18 @@ export default function Home() {
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className="max-w-[85%] min-w-0 sm:max-w-[75%]">
+
                     {msg.type === 'text' && (
                       <MessageBubble
                         msg={msg}
                         isMine={isMine}
                         onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
-                        onReply={(msg) => setReplyingTo(msg)}              // ← add this
+                        onReply={(m) => setReplyingTo(m)}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
                       />
                     )}
+
                     {msg.type === 'file' && (
                       <FileBubble
                         msg={msg}
@@ -500,8 +581,11 @@ export default function Home() {
                         onCancel={cancelQueuedFile}
                       />
                     )}
+
                     <p className={`mt-0.5 text-[10px] text-slate-400 ${isMine ? 'text-right' : 'text-left'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(msg.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit', minute: '2-digit',
+                      })}
                     </p>
                   </div>
                 </div>
@@ -610,7 +694,7 @@ export default function Home() {
                 </div>
 
                 {(rtcState === 'failed' || rtcState === 'relay') && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                  <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
                     <p className="font-semibold">
                       {rtcState === 'relay' ? 'Switched to relay mode' : 'Connection failed'}
                     </p>
