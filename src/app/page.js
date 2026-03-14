@@ -6,7 +6,6 @@ import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCryp
 import SessionCode from '@/app/components/SessionCode';
 import ConnectionStatus from '@/app/components/ConnectionStatus';
 
-/* ── tiny helpers ─────────────────────────────────────────────────── */
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -18,7 +17,6 @@ function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-/* ── FileBubble ───────────────────────────────────────────────────── */
 function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
   const { mimeType = '', previewUrl, name, size, status = 'queued', progress = 0 } = msg;
   const isImg = mimeType.startsWith('image/');
@@ -33,8 +31,6 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
 
   return (
     <div className={`w-64 sm:w-72 max-w-[80vw] rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
-
-      {/* ── Image ── */}
       {isImg && previewUrl && (
         <button className="block w-full focus:outline-none" onClick={() => onPreview?.(previewUrl)}>
           <img
@@ -44,20 +40,14 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
           />
         </button>
       )}
-
-      {/* ── Video ── */}
       {isVid && previewUrl && !isBusy && (
         <video src={previewUrl} controls className="block w-full max-h-52 bg-black" />
       )}
-
-      {/* ── Audio ── */}
       {isAud && previewUrl && !isBusy && (
         <div className="px-3 pt-3">
           <audio src={previewUrl} controls style={{ width: '100%', minWidth: 0 }} />
         </div>
       )}
-
-      {/* ── Generic file card (non-media or no preview yet) ── */}
       {!hasPreview && (
         <div className="flex items-center gap-3 px-4 py-3">
           <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100'}`}>
@@ -72,15 +62,11 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
           </div>
         </div>
       )}
-
-      {/* ── Filename under media thumbnails ── */}
       {hasPreview && (
         <p className={`truncate px-3 pt-1.5 text-xs ${isMine ? 'text-white/60' : 'text-slate-500'}`}>
           {name} · {formatSize(size)}
         </p>
       )}
-
-      {/* ── Progress bar ── */}
       {isBusy && (
         <div className={`mx-3 my-2 h-1 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200'}`}>
           <div
@@ -89,8 +75,6 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
           />
         </div>
       )}
-
-      {/* ── Bottom status / action row ── */}
       <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
         <span className={`text-xs ${isMine ? 'text-white/50' : 'text-slate-400'}`}>
           {status === 'queued'    && 'Queued…'}
@@ -99,9 +83,7 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
           {status === 'receiving' && `Receiving ${progress}%`}
           {status === 'error'     && '✗ Error'}
         </span>
-
         <div className="flex items-center gap-1.5">
-          {/* Cancel queued upload */}
           {status === 'queued' && isMine && onCancel && (
             <button
               onClick={() => onCancel(msg.id)}
@@ -110,8 +92,6 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
               Cancel
             </button>
           )}
-
-          {/* Download / Save for received files */}
           {!isMine && status === 'received' && (
             <button
               onClick={() => onDownload?.(msg)}
@@ -120,8 +100,6 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
               {isImg || isVid ? 'Save' : 'Download'}
             </button>
           )}
-
-          {/* Save own sent image */}
           {isMine && status === 'sent' && isImg && previewUrl && (
             <button
               onClick={() => onDownload?.(msg)}
@@ -136,34 +114,28 @@ function FileBubble({ msg, isMine, onDownload, onPreview, onCancel }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   Main Page
-══════════════════════════════════════════════════════════════════ */
 export default function Home() {
-  const [mode, setMode] = useState(null);          // 'send' | 'receive'
+  const [mode, setMode] = useState(null);
   const [sessionCode, setSessionCode] = useState('');
   const [roomToken, setRoomToken] = useState('');
-  const [status, setStatus] = useState('idle');    // idle | waiting | connected | transferring | error
+  const [status, setStatus] = useState('idle');
   const [connectionType, setConnectionType] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
-
-  // All messages: text, file, system
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [rtcState, setRtcState] = useState('idle'); // idle | checking | connected | failed | etc.
+  const [rtcState, setRtcState] = useState('idle');
   const [showTimeout, setShowTimeout] = useState(false);
 
   const cryptoKeyRef = useRef(null);
   const autoJoinHandled = useRef(false);
-  const pendingFilesRef = useRef([]);       // { file, msgId }[]
+  const pendingFilesRef = useRef([]);
   const sendingLoopRunning = useRef(false);
   const receivingMsgIdRef = useRef(null);
   const currentSendingMsgIdRef = useRef(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  /* ── message helpers ─────────────────────────────────────────── */
   const addMsg = useCallback((msg) => {
     setMessages((prev) => [...prev, msg]);
   }, []);
@@ -179,12 +151,10 @@ export default function Home() {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)));
   }, []);
 
-  // Auto-scroll to newest message
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  /* ── crypto ──────────────────────────────────────────────────── */
   const setupDerivedKey = useCallback(async (secret) => {
     const key = await deriveKeyFromSecret(secret);
     cryptoKeyRef.current = key;
@@ -200,7 +170,10 @@ export default function Home() {
     return decryptChunk(cryptoKeyRef.current, data);
   }, []);
 
-  /* ── signaling ───────────────────────────────────────────────── */
+  // ── handleSignal must be declared before useSignaling ─────────────────
+  // We use a ref so useWebRTC hooks can be declared after, then wired in
+  const handleRelayMessageRef = useRef(null);
+
   const handleSignal = useCallback((msg) => {
     switch (msg.type) {
       case 'created':
@@ -232,6 +205,10 @@ export default function Home() {
       case 'ice-candidate':
         handleIceCandidate(msg.payload);
         break;
+      case 'relay':
+        // Route relay messages to WebRTC hook
+        handleRelayMessageRef.current?.(msg.payload);
+        break;
       case 'peer-disconnected':
         setStatus('waiting');
         pendingFilesRef.current = [];
@@ -250,12 +227,19 @@ export default function Home() {
 
   const { send, wsState } = useSignaling(handleSignal);
 
-  /* ── WebRTC ──────────────────────────────────────────────────── */
   const {
-    createOffer, handleOffer, handleAnswer, handleIceCandidate,
-    sendFile, sendChatMessage, getConnectionInfo, cleanup,
+    createOffer,
+    handleOffer,
+    handleAnswer,
+    handleIceCandidate,
+    sendFile,
+    sendChatMessage,
+    getConnectionInfo,
+    cleanup,
+    handleRelayMessage,
   } = useWebRTC({
     onSignal: ({ type, payload }) => send({ type, payload }),
+    wsSend: send,   // ← relay fallback uses the same WS connection
 
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
@@ -291,8 +275,8 @@ export default function Home() {
         prev.map((m) =>
           m.id === msgId
             ? { ...m, blob, previewUrl, status: 'received', progress: 100 }
-            : m,
-        ),
+            : m
+        )
       );
       setStatus('connected');
     },
@@ -302,7 +286,12 @@ export default function Home() {
       addSystemMsg('Connected — end-to-end encrypted 🔒');
       setTimeout(async () => {
         const info = await getConnectionInfo();
-        if (info) setConnectionType(info);
+        if (info) {
+          setConnectionType(info);
+          if (info.type === 'relay') {
+            addSystemMsg('Using secure server relay (direct P2P unavailable on this network)');
+          }
+        }
       }, 2000);
     },
 
@@ -327,8 +316,10 @@ export default function Home() {
 
     onStateChange: (state) => {
       setRtcState(state);
-      if (state === 'failed' || state === 'disconnected') {
-        addSystemMsg(`Connection ${state}. Retrying...`);
+      if (state === 'relay') {
+        addSystemMsg('Direct P2P failed — switching to secure relay 🔄');
+      } else if (state === 'failed' || state === 'disconnected') {
+        addSystemMsg(`Connection ${state}. Switching to relay...`);
       }
     },
 
@@ -336,7 +327,12 @@ export default function Home() {
     decryptChunk: decryptFn,
   });
 
-  /* ── auto-join from URL ──────────────────────────────────────── */
+  // Wire relay handler into the ref so handleSignal can call it
+  useEffect(() => {
+    handleRelayMessageRef.current = handleRelayMessage;
+  }, [handleRelayMessage]);
+
+  // ── Auto-join from URL ─────────────────────────────────────────────────
   useEffect(() => {
     if (autoJoinHandled.current) return;
     if (wsState !== 'connected') return;
@@ -356,7 +352,7 @@ export default function Home() {
     window.history.replaceState({}, '', window.location.pathname);
   }, [wsState, send, setupDerivedKey]);
 
-  /* ── room actions ────────────────────────────────────────────── */
+  // ── Room actions ───────────────────────────────────────────────────────
   const startSend = () => {
     setErrorMsg('');
     setMode('send');
@@ -403,7 +399,7 @@ export default function Home() {
     receivingMsgIdRef.current = null;
   };
 
-  /* ── send loop ───────────────────────────────────────────────── */
+  // ── Send loop ──────────────────────────────────────────────────────────
   const runSendLoop = useCallback(async () => {
     if (sendingLoopRunning.current) return;
     sendingLoopRunning.current = true;
@@ -429,7 +425,7 @@ export default function Home() {
     let timer;
     if (status === 'waiting' && mode) {
       setShowTimeout(false);
-      timer = setTimeout(() => setShowTimeout(true), 15000); // 15s timeout
+      timer = setTimeout(() => setShowTimeout(true), 15000);
     } else {
       setShowTimeout(false);
     }
@@ -442,7 +438,7 @@ export default function Home() {
     }
   }, [status, runSendLoop]);
 
-  /* ── attach files ────────────────────────────────────────────── */
+  // ── Attach files ───────────────────────────────────────────────────────
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
@@ -467,16 +463,13 @@ export default function Home() {
     if (status === 'connected') runSendLoop();
   }, [status, runSendLoop]);
 
-  /* ── cancel queued file ──────────────────────────────────────── */
   const cancelQueuedFile = useCallback((msgId) => {
     const idx = pendingFilesRef.current.findIndex((x) => x.msgId === msgId);
-    // Don't cancel the file currently being sent
     if (idx === 0 && status === 'transferring') return;
     if (idx >= 0) pendingFilesRef.current.splice(idx, 1);
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   }, [status]);
 
-  /* ── send text message ───────────────────────────────────────── */
   const handleSendText = useCallback(() => {
     const text = chatInput.trim();
     if (!text) return;
@@ -485,7 +478,6 @@ export default function Home() {
     setChatInput('');
   }, [chatInput, sendChatMessage, addMsg]);
 
-  /* ── download / save file ────────────────────────────────────── */
   const downloadMsg = useCallback((msg) => {
     if (msg.previewUrl) {
       const a = document.createElement('a');
@@ -504,20 +496,14 @@ export default function Home() {
     }
   }, []);
 
-  /* ── chat is ready when peer is connected ────────────────────── */
   const chatReady = status === 'connected' || status === 'transferring';
 
-  /* ══════════════════════════════════════════════════════════════
-     Render
-  ══════════════════════════════════════════════════════════════ */
   return (
     <main className="flex min-h-screen flex-col bg-slate-100">
 
-      {/* ════════════  CHAT VIEW  ════════════ */}
+      {/* ════════  CHAT VIEW  ════════ */}
       {chatReady && (
         <div className="flex h-screen flex-col">
-
-          {/* ── Header bar ── */}
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
@@ -526,35 +512,27 @@ export default function Home() {
               >
                 ← Leave
               </button>
-
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">
                   {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
                 </p>
                 <p className="text-[10px] text-slate-400 sm:text-[11px]">
-                  🔒 E2E Encrypted
+                  {connectionType?.type === 'relay' ? '🔄 Relay · E2E Encrypted' : '🔒 E2E Encrypted'}
                 </p>
               </div>
             </div>
-
             <div className="shrink-0">
-              <ConnectionStatus
-                wsState={wsState}
-                encrypted={!!cryptoKeyRef.current}
-              />
+              <ConnectionStatus wsState={wsState} encrypted={!!cryptoKeyRef.current} />
             </div>
           </header>
 
-          {/* ── Messages scroll area ── */}
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 sm:px-4 sm:py-5">
             {messages.length === 0 && (
               <p className="mt-12 text-center text-xs text-slate-400">
                 Say hi, or tap the paperclip to send a file 📎
               </p>
             )}
-
             {messages.map((msg) => {
-              /* system event pill */
               if (msg.type === 'system') {
                 return (
                   <div key={msg.id} className="flex justify-center py-1">
@@ -564,13 +542,10 @@ export default function Home() {
                   </div>
                 );
               }
-
               const isMine = msg.sender === 'me';
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className="max-w-[85%] sm:max-w-[75%] min-w-0">
-
-                    {/* Text bubble */}
                     {msg.type === 'text' && (
                       <div
                         className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap wrap-break-word ${
@@ -582,8 +557,6 @@ export default function Home() {
                         {msg.text}
                       </div>
                     )}
-
-                    {/* File bubble */}
                     {msg.type === 'file' && (
                       <FileBubble
                         msg={msg}
@@ -593,8 +566,6 @@ export default function Home() {
                         onCancel={cancelQueuedFile}
                       />
                     )}
-
-                    {/* Timestamp */}
                     <p className={`mt-0.5 text-[10px] text-slate-400 ${isMine ? 'text-right' : 'text-left'}`}>
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
@@ -605,7 +576,6 @@ export default function Home() {
             <div ref={chatEndRef} />
           </div>
 
-          {/* ── Error banner ── */}
           {errorMsg && (
             <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-center text-xs text-red-700">
               {errorMsg}
@@ -615,11 +585,8 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Input bar ── */}
           <div className="shrink-0 border-t border-slate-200 bg-white px-2 py-2 sm:px-4 sm:py-3">
             <div className="flex items-end gap-1.5 sm:gap-2">
-
-              {/* Attach files */}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach files"
@@ -640,8 +607,6 @@ export default function Home() {
                   e.target.value = '';
                 }}
               />
-
-              {/* Text input */}
               <textarea
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
@@ -656,8 +621,6 @@ export default function Home() {
                 className="flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition-colors"
                 style={{ maxHeight: '120px', overflowY: 'auto' }}
               />
-
-              {/* Send */}
               <button
                 onClick={handleSendText}
                 disabled={!chatInput.trim()}
@@ -673,11 +636,10 @@ export default function Home() {
         </div>
       )}
 
-      {/* ════════════  LOBBY VIEW  ════════════ */}
+      {/* ════════  LOBBY VIEW  ════════ */}
       {!chatReady && (
         <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-
             <header className="mb-8 text-center">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                 Secure Peer-to-Peer
@@ -689,13 +651,9 @@ export default function Home() {
             </header>
 
             <div className="mb-6">
-              <ConnectionStatus
-                wsState={wsState}
-                encrypted={!!cryptoKeyRef.current}
-              />
+              <ConnectionStatus wsState={wsState} encrypted={!!cryptoKeyRef.current} />
             </div>
 
-            {/* Mode selection */}
             {!mode && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <button
@@ -713,19 +671,16 @@ export default function Home() {
               </div>
             )}
 
-            {/* Receiver: enter room code */}
             {mode === 'receive' && status === 'idle' && (
               <SessionCode mode="receive" onJoin={joinRoom} />
             )}
 
-            {/* Sender: show room code + shareable link */}
             {mode === 'send' && (
               <div className="space-y-4">
                 <SessionCode mode="send" code={sessionCode} token={roomToken} />
               </div>
             )}
 
-            {/* Connecting status for both sides */}
             {mode && status === 'waiting' && (
               <div className="space-y-4">
                 <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 bg-slate-50 py-8 text-center">
@@ -743,21 +698,27 @@ export default function Home() {
                   </div>
                 </div>
 
-                {rtcState === 'failed' && (
+                {(rtcState === 'failed' || rtcState === 'relay') && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    <p className="font-semibold">Connection failed</p>
-                    <p className="mt-1 text-xs opacity-80">This usually happens on restricted networks. Try staying on the same Wi-Fi or using a different browser.</p>
+                    <p className="font-semibold">
+                      {rtcState === 'relay' ? 'Switched to relay mode' : 'Connection failed'}
+                    </p>
+                    <p className="mt-1 text-xs opacity-80">
+                      {rtcState === 'relay'
+                        ? 'Direct P2P was blocked by your network. Using server relay — still encrypted.'
+                        : 'This usually happens on restricted networks. Switching to relay…'}
+                    </p>
                   </div>
                 )}
 
-                {showTimeout && rtcState !== 'connected' && (
+                {showTimeout && rtcState !== 'connected' && rtcState !== 'relay' && (
                   <div className="animate-in fade-in slide-in-from-top-2 duration-500 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold text-slate-700">Taking longer than expected?</p>
                     <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-                      If the session doesn't start soon, your network might be restricting P2P connections. 
-                      Try using a different device or network (e.g. mobile data).
+                      If the session doesn't start soon, your network may be restricting connections.
+                      The app will automatically switch to relay mode. Please wait a moment.
                     </p>
-                    <button 
+                    <button
                       onClick={reset}
                       className="mt-3 w-full rounded-lg border border-slate-300 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                     >
@@ -768,7 +729,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Error */}
             {errorMsg && (
               <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700">
                 {errorMsg}
@@ -785,13 +745,13 @@ export default function Home() {
             )}
 
             <footer className="mt-8 text-center text-xs text-slate-400">
-              Transfers are device-to-device via WebRTC. The signaling server only coordinates the connection.
+              Transfers are device-to-device via WebRTC. Falls back to encrypted server relay when needed.
             </footer>
           </div>
         </div>
       )}
 
-      {/* ════════════  IMAGE LIGHTBOX  ════════════ */}
+      {/* ════════  LIGHTBOX  ════════ */}
       {lightboxUrl && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
