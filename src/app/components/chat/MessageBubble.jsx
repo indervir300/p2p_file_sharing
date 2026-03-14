@@ -6,7 +6,7 @@ export default function MessageBubble({ msg, isMine, onReact }) {
   const [showPicker, setShowPicker] = useState(false);
   const longPressTimer = useRef(null);
 
-  // ── Long press (mobile) ────────────────────────────────────────────
+  // ── Long press (mobile) ──────────────────────────────────────────
   const onTouchStart = useCallback(() => {
     longPressTimer.current = setTimeout(() => setShowPicker(true), 600);
   }, []);
@@ -15,8 +15,9 @@ export default function MessageBubble({ msg, isMine, onReact }) {
     clearTimeout(longPressTimer.current);
   }, []);
 
-  const reactions   = msg.reactions || {};
-  const hasReactions = Object.keys(reactions).length > 0;
+  // reactions shape: { '👍': { mine: bool, peer: bool }, ... }
+  const reactions    = msg.reactions || {};
+  const reactionList = Object.entries(reactions).filter(([, r]) => r.mine || r.peer);
 
   return (
     <div className="relative group">
@@ -35,7 +36,7 @@ export default function MessageBubble({ msg, isMine, onReact }) {
         {msg.text}
       </div>
 
-      {/* React button — appears on hover (desktop) */}
+      {/* Hover react button (desktop) */}
       <button
         onClick={() => setShowPicker((s) => !s)}
         className={`absolute top-1/2 -translate-y-1/2
@@ -51,28 +52,37 @@ export default function MessageBubble({ msg, isMine, onReact }) {
       {showPicker && (
         <ReactionPicker
           alignRight={isMine}
-          onSelect={(emoji) => onReact?.(msg.id, emoji)}
+          myCurrentEmoji={
+            Object.keys(reactions).find((e) => reactions[e].mine) || null
+          }
+          onSelect={(emoji) => {
+            onReact?.(msg.id, emoji);
+            setShowPicker(false);
+          }}
           onClose={() => setShowPicker(false)}
         />
       )}
 
-      {/* Reaction count bubbles */}
-      {hasReactions && (
+      {/* Reaction bubbles */}
+      {reactionList.length > 0 && (
         <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
-          {Object.entries(reactions).map(([emoji, { count, mine }]) => (
-            <button
-              key={emoji}
-              onClick={() => onReact?.(msg.id, emoji)}
-              className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs shadow-sm transition-colors ${
-                mine
-                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <span>{emoji}</span>
-              {count > 1 && <span className="font-medium">{count}</span>}
-            </button>
-          ))}
+          {reactionList.map(([emoji, r]) => {
+            const count = (r.mine ? 1 : 0) + (r.peer ? 1 : 0);
+            return (
+              <button
+                key={emoji}
+                onClick={() => onReact?.(msg.id, emoji)}
+                className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs shadow-sm transition-colors ${
+                  r.mine
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span>{emoji}</span>
+                {count > 1 && <span className="font-medium">{count}</span>}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

@@ -7,7 +7,6 @@ import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCryp
 // Components
 import SessionCode         from '@/app/components/SessionCode';
 import ConnectionStatus    from '@/app/components/ConnectionStatus';
-import NetworkBadge        from '@/app/components/connection/NetworkBadge';
 import MessageBubble       from '@/app/components/chat/MessageBubble';
 import FileBubble          from '@/app/components/chat/FileBubble';
 import TypingIndicator     from '@/app/components/chat/TypingIndicator';
@@ -80,32 +79,55 @@ export default function Home() {
   // ── Reaction handler ─────────────────────────────────────────────────
   // fromPeer = true  → arrived over DataChannel, don't re-send
   // fromPeer = false → local user tapped, send to peer
-  const handleReaction = useCallback((msgId, emoji, fromPeer = false) => {
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== msgId) return m;
-        const reactions = { ...(m.reactions || {}) };
-        const existing  = reactions[emoji] || { count: 0, mine: false };
+const handleReaction = useCallback((msgId, emoji, fromPeer = false) => {
+  setMessages((prev) =>
+    prev.map((m) => {
+      if (m.id !== msgId) return m;
 
-        if (!fromPeer && existing.mine) {
-          // Toggle off own reaction
-          const newCount = existing.count - 1;
-          if (newCount <= 0) delete reactions[emoji];
-          else reactions[emoji] = { count: newCount, mine: false };
-        } else {
-          reactions[emoji] = {
-            count: existing.count + 1,
-            mine:  !fromPeer ? true : existing.mine,
-          };
+      // Deep copy reactions
+      const reactions = {};
+      Object.entries(m.reactions || {}).forEach(([e, r]) => {
+        reactions[e] = { ...r };
+      });
+
+      if (fromPeer) {
+        // ── Peer reacted ────────────────────────────────────────────
+        // Remove peer's previous reaction (replace behavior)
+        Object.keys(reactions).forEach((e) => {
+          if (reactions[e].peer) {
+            reactions[e].peer = false;
+            if (!reactions[e].mine) delete reactions[e];
+          }
+        });
+        // Add new peer reaction (emoji = null means peer removed theirs)
+        if (emoji) {
+          reactions[emoji] = { mine: reactions[emoji]?.mine || false, peer: true };
         }
-        return { ...m, reactions };
-      })
-    );
 
-    if (!fromPeer) {
-      sendReactionRef.current?.(msgId, emoji);
-    }
-  }, []);
+      } else {
+        // ── I reacted ───────────────────────────────────────────────
+        const myPrevEmoji = Object.keys(reactions).find((e) => reactions[e].mine);
+
+        if (myPrevEmoji === emoji) {
+          // Same emoji tapped → toggle off
+          reactions[emoji].mine = false;
+          if (!reactions[emoji].peer) delete reactions[emoji];
+          sendReactionRef.current?.(msgId, null); // tell peer: removed
+        } else {
+          // Different emoji → remove old, set new (replace)
+          if (myPrevEmoji) {
+            reactions[myPrevEmoji].mine = false;
+            if (!reactions[myPrevEmoji].peer) delete reactions[myPrevEmoji];
+          }
+          reactions[emoji] = { mine: true, peer: reactions[emoji]?.peer || false };
+          sendReactionRef.current?.(msgId, emoji); // tell peer: new emoji
+        }
+      }
+
+      return { ...m, reactions };
+    })
+  );
+}, []);
 
   // ── Signaling ────────────────────────────────────────────────────────
   const handleSignal = useCallback((msg) => {
@@ -460,13 +482,6 @@ export default function Home() {
             </div>
             <ConnectionStatus wsState={wsState} encrypted={!!cryptoKeyRef.current} />
           </header>
-
-          {/* Network path badge — always visible, no toggle needed */}
-          {connectionType && (
-            <div className="shrink-0 flex justify-center py-1.5 bg-white border-b border-slate-100">
-              <NetworkBadge connectionType={connectionType} rtt={statsData?.rtt} />
-            </div>
-          )}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 sm:px-4 sm:py-5">

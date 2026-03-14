@@ -1,9 +1,9 @@
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
 
-export default function ReactionPicker({ onSelect, onClose, alignRight = false }) {
+export default function ReactionPicker({ onSelect, onClose, alignRight = false, myCurrentEmoji = null }) {
   return (
     <>
-      {/* invisible backdrop to close picker on outside click */}
+      {/* Backdrop */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
       <div className={`absolute bottom-full mb-1.5 z-50 flex items-center gap-0.5
@@ -13,8 +13,13 @@ export default function ReactionPicker({ onSelect, onClose, alignRight = false }
         {EMOJIS.map((emoji) => (
           <button
             key={emoji}
-            onClick={() => { onSelect(emoji); onClose(); }}
-            className="text-lg p-1 rounded-lg hover:bg-slate-100 hover:scale-125 transition-all"
+            onClick={() => onSelect(emoji)}
+            className={`text-lg p-1 rounded-lg transition-all hover:scale-125 ${
+              myCurrentEmoji === emoji
+                ? 'bg-indigo-100 scale-110'
+                : 'hover:bg-slate-100'
+            }`}
+            title={myCurrentEmoji === emoji ? 'Remove reaction' : emoji}
           >
             {emoji}
           </button>
