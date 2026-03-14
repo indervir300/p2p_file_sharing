@@ -493,18 +493,20 @@ export function useWebRTC({
   }, [wsSend]);
 
   // ── Chat ───────────────────────────────────────────────────────────
-  const sendChatMessage = useCallback((text) => {
-    const id      = makeId();
-    const payload = { kind: 'chat', text, timestamp: Date.now(), id };
-    if (isRelayMode.current) {
-      wsSend?.({ type: 'relay', payload });
-      return true;
-    }
-    const dc = dcRef.current;
-    if (!dc || dc.readyState !== 'open') return false;
-    dc.send(JSON.stringify(payload));
-    return true;
-  }, [wsSend]);
+const sendChatMessage = useCallback((text) => {
+  const id      = makeId();                                    // ← one id
+  const payload = { kind: 'chat', text, timestamp: Date.now(), id };
+
+  if (isRelayMode.current) {
+    wsSend?.({ type: 'relay', payload });
+    return id;                                                 // ← return it
+  }
+  const dc = dcRef.current;
+  if (!dc || dc.readyState !== 'open') return false;
+  dc.send(JSON.stringify(payload));
+  return id;                                                   // ← return it
+}, [wsSend]);
+
 
   // ── Reaction ───────────────────────────────────────────────────────
   // emoji = null means "removed my reaction"

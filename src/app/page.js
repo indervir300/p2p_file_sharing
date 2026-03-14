@@ -435,11 +435,19 @@ const handleReaction = useCallback((msgId, emoji, fromPeer = false) => {
   }, [status]);
 
   // ── Send text ───────────────────────────────────────────────────────
-  const handleSendText = useCallback((text) => {
-    if (!text) return;
-    if (sendChatMessage?.(text) === false) return;
-    addMsg({ id: genId(), type: 'text', sender: 'me', text, timestamp: Date.now() });
-  }, [sendChatMessage, addMsg]);
+const handleSendText = useCallback((text) => {
+  if (!text) return;
+  const id = sendChatMessage?.(text);    // ← use the returned id
+  if (id === false || !id) return;
+  addMsg({
+    id,                                  // ← same id the peer will receive
+    type: 'text',
+    sender: 'me',
+    text,
+    timestamp: Date.now(),
+  });
+}, [sendChatMessage, addMsg]);
+
 
   // ── Download ────────────────────────────────────────────────────────
   const downloadMsg = useCallback((msg) => {
