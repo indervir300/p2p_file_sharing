@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback } from 'react';
 import ReactionPicker from './ReactionPicker';
 
-export default function MessageBubble({ msg, isMine, onReact }) {
+export default function MessageBubble({ msg, isMine, onReact, onReply }) {
   const [showPicker, setShowPicker] = useState(false);
   const longPressTimer = useRef(null);
 
@@ -16,7 +16,26 @@ export default function MessageBubble({ msg, isMine, onReact }) {
 
   return (
     <div className="relative group">
-      {/* Bubble */}
+
+      {/* ── Reply quote (if this message is a reply) ──────────────── */}
+      {msg.replyTo && (
+        <div className={`mb-1 flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+          <div className={`max-w-[90%] rounded-xl px-3 py-1.5 text-xs border-l-2 cursor-default select-none ${
+            isMine
+              ? 'bg-slate-800/60 dark:bg-slate-700/60 border-slate-400 text-slate-300'
+              : 'bg-slate-100 dark:bg-slate-700 border-slate-400 text-slate-500 dark:text-slate-400'
+          }`}>
+            <p className="font-semibold mb-0.5 text-[10px] uppercase tracking-wide opacity-70">
+              {msg.replyTo.sender === 'me' ? 'You' : 'Peer'}
+            </p>
+            <p className="truncate">
+              {msg.replyTo.type === 'file' ? `📎 ${msg.replyTo.name}` : msg.replyTo.text}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bubble ───────────────────────────────────────────────── */}
       <div
         className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words select-none ${
           isMine
@@ -30,20 +49,34 @@ export default function MessageBubble({ msg, isMine, onReact }) {
         {msg.text}
       </div>
 
-      {/* Hover react button */}
-      <button
-        onClick={() => setShowPicker((s) => !s)}
-        className={`absolute top-1/2 -translate-y-1/2
-          opacity-0 group-hover:opacity-100 transition-opacity
-          text-base p-1 rounded-full
-          hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400
-          ${isMine ? '-left-8' : '-right-8'}`}
-        title="React"
+      {/* ── Action buttons (hover, desktop) ──────────────────────── */}
+      <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5
+        opacity-0 group-hover:opacity-100 transition-opacity
+        ${isMine ? '-left-16' : '-right-16'}`}
       >
-        🙂
-      </button>
+        {/* Reply */}
+        <button
+          onClick={() => onReply?.(msg)}
+          title="Reply"
+          className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+          </svg>
+        </button>
 
-      {/* Picker */}
+        {/* React */}
+        <button
+          onClick={() => setShowPicker((s) => !s)}
+          title="React"
+          className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-base"
+        >
+          🙂
+        </button>
+      </div>
+
+      {/* ── Reaction picker ───────────────────────────────────────── */}
       {showPicker && (
         <ReactionPicker
           alignRight={isMine}
@@ -53,7 +86,7 @@ export default function MessageBubble({ msg, isMine, onReact }) {
         />
       )}
 
-      {/* Reaction bubbles */}
+      {/* ── Reaction bubbles ──────────────────────────────────────── */}
       {reactionList.length > 0 && (
         <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
           {reactionList.map(([emoji, r]) => {

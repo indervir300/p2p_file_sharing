@@ -32,20 +32,20 @@ export function useWebRTC({
   decryptChunk,
   wsSend,
 }) {
-  const pcRef             = useRef(null);
-  const dcRef             = useRef(null);
-  const recvBuffers       = useRef([]);
-  const recvSize          = useRef(0);
-  const fileMeta          = useRef(null);
-  const startTime         = useRef(null);
-  const sendingRef        = useRef(false);
+  const pcRef = useRef(null);
+  const dcRef = useRef(null);
+  const recvBuffers = useRef([]);
+  const recvSize = useRef(0);
+  const fileMeta = useRef(null);
+  const startTime = useRef(null);
+  const sendingRef = useRef(false);
   const pendingCandidates = useRef([]);
-  const isRelayMode       = useRef(false);
+  const isRelayMode = useRef(false);
 
   // ── Resumable transfer refs ────────────────────────────────────────
   const pendingTransferRef = useRef(null);
-  const recvTransferRef    = useRef(null);
-  const abortSendRef       = useRef(false);
+  const recvTransferRef = useRef(null);
+  const abortSendRef = useRef(false);
 
   // ── Control message sender ─────────────────────────────────────────
   const sendControl = useCallback((payload) => {
@@ -103,10 +103,10 @@ export function useWebRTC({
       }
 
       offset += CHUNK_SIZE;
-      const sent    = Math.min(offset, buffer.byteLength);
+      const sent = Math.min(offset, buffer.byteLength);
       const percent = Math.min(99, Math.round((sent / totalSize) * 100));
       const elapsed = (Date.now() - startTime.current) / 1000;
-      const speed   = elapsed > 0 ? (sent - fromOffset) / elapsed : 0;
+      const speed = elapsed > 0 ? (sent - fromOffset) / elapsed : 0;
       onProgress?.({ percent, speed, sent, total: totalSize });
 
       if (Math.floor(offset / CHUNK_SIZE) % 10 === 0) await new Promise((r) => setTimeout(r, 0));
@@ -145,7 +145,7 @@ export function useWebRTC({
 
     const percent = Math.min(99, Math.round((recvSize.current / meta.size) * 100));
     const elapsed = (Date.now() - startTime.current) / 1000;
-    const speed   = elapsed > 0 ? recvSize.current / elapsed : 0;
+    const speed = elapsed > 0 ? recvSize.current / elapsed : 0;
     onProgress?.({ percent, speed, received: Math.min(recvSize.current, meta.size), total: meta.size });
   }, [decryptChunk, onTransferError, onProgress, sendControl]);
 
@@ -184,9 +184,15 @@ export function useWebRTC({
     }
 
     if (kind === 'chat') {
-      onChatMessage?.({ text: message.text, timestamp: message.timestamp, id: message.id });
+      onChatMessage?.({
+        text: message.text,
+        timestamp: message.timestamp,
+        id: message.id,
+        replyTo: message.replyTo || null,   // ← add this
+      });
       return;
     }
+
 
     if (kind === 'transfer-ack') {
       if (pendingTransferRef.current?.transferId === message.transferId)
@@ -275,16 +281,18 @@ export function useWebRTC({
 
     if (payload.kind === 'relay-connected') {
       if (!isRelayMode.current) {
-        isRelayMode.current  = true;
+        isRelayMode.current = true;
         abortSendRef.current = true;
         onStateChange?.('relay');
         onConnected?.();
         if (recvTransferRef.current) {
-          wsSend?.({ type: 'relay', payload: {
-            kind: 'resume-request',
-            transferId: recvTransferRef.current.transferId,
-            offset: recvTransferRef.current.receivedBytes,
-          }});
+          wsSend?.({
+            type: 'relay', payload: {
+              kind: 'resume-request',
+              transferId: recvTransferRef.current.transferId,
+              offset: recvTransferRef.current.receivedBytes,
+            }
+          });
         }
       }
       return;
@@ -376,15 +384,31 @@ export function useWebRTC({
   }, [wsSend]);
 
   // ── Chat ───────────────────────────────────────────────────────────
-  const sendChatMessage = useCallback((text) => {
-    const id      = makeId();
-    const payload = { kind: 'chat', text, timestamp: Date.now(), id };
+  const sendChatMessage = useCallback((text, replyTo = null) => {
+    const id = makeId();
+    const payload = {
+      kind: 'chat',
+      text,
+      timestamp: Date.now(),
+      id,
+      // Only send the fields the peer needs to render the quote
+      ...(replyTo && {
+        replyTo: {
+          id: replyTo.id,
+          text: replyTo.text || null,
+          name: replyTo.name || null,
+          type: replyTo.type,
+          sender: replyTo.sender,
+        },
+      }),
+    };
     if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return id; }
     const dc = dcRef.current;
     if (!dc || dc.readyState !== 'open') return false;
     dc.send(JSON.stringify(payload));
     return id;
   }, [wsSend]);
+
 
   // ── Reaction ───────────────────────────────────────────────────────
   const sendReaction = useCallback((msgId, emoji) => {
@@ -405,7 +429,7 @@ export function useWebRTC({
   const sendFile = useCallback(async (file) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
-    const transferId  = makeId();
+    const transferId = makeId();
     const metaPayload = {
       kind: 'meta', version: 2, name: file.name,
       size: file.size, type: file.type, encrypted: !!encryptChunk,
@@ -440,11 +464,11 @@ export function useWebRTC({
       const stats = await pc.getStats();
       for (const [, report] of stats) {
         if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          const local  = stats.get(report.localCandidateId);
+          const local = stats.get(report.localCandidateId);
           const remote = stats.get(report.remoteCandidateId);
           return {
-            type:     local?.candidateType || 'unknown',
-            relayed:  local?.candidateType === 'relay' || remote?.candidateType === 'relay',
+            type: local?.candidateType || 'unknown',
+            relayed: local?.candidateType === 'relay' || remote?.candidateType === 'relay',
             protocol: local?.protocol || 'unknown',
           };
         }

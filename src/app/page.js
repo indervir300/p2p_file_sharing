@@ -1,18 +1,18 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSignaling }   from '@/hooks/useSignaling';
-import { useWebRTC }      from '@/hooks/useWebRTC';
+import { useSignaling } from '@/hooks/useSignaling';
+import { useWebRTC } from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 
-import SessionCode        from '@/app/components/SessionCode';
-import ConnectionStatus   from '@/app/components/ConnectionStatus';
-import DarkModeToggle     from '@/app/components/ui/DarkModeToggle';
-import PeerAvatar         from '@/app/components/chat/PeerAvatar';
-import MessageBubble      from '@/app/components/chat/MessageBubble';
-import FileBubble         from '@/app/components/chat/FileBubble';
-import TypingIndicator    from '@/app/components/chat/TypingIndicator';
-import ChatInput          from '@/app/components/chat/ChatInput';
-import Whiteboard         from '@/app/components/whiteboard/Whiteboard';
+import SessionCode from '@/app/components/SessionCode';
+import ConnectionStatus from '@/app/components/ConnectionStatus';
+import DarkModeToggle from '@/app/components/ui/DarkModeToggle';
+import PeerAvatar from '@/app/components/chat/PeerAvatar';
+import MessageBubble from '@/app/components/chat/MessageBubble';
+import FileBubble from '@/app/components/chat/FileBubble';
+import TypingIndicator from '@/app/components/chat/TypingIndicator';
+import ChatInput from '@/app/components/chat/ChatInput';
+import Whiteboard from '@/app/components/whiteboard/Whiteboard';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -20,31 +20,33 @@ function genId() {
 
 export default function Home() {
   // ── Core state ─────────────────────────────────────────────────────
-  const [mode, setMode]                     = useState(null);
-  const [sessionCode, setSessionCode]       = useState('');
-  const [roomToken, setRoomToken]           = useState('');
-  const [status, setStatus]                 = useState('idle');
+  const [mode, setMode] = useState(null);
+  const [sessionCode, setSessionCode] = useState('');
+  const [roomToken, setRoomToken] = useState('');
+  const [status, setStatus] = useState('idle');
   const [connectionType, setConnectionType] = useState(null);
-  const [errorMsg, setErrorMsg]             = useState('');
-  const [messages, setMessages]             = useState([]);
-  const [lightboxUrl, setLightboxUrl]       = useState(null);
-  const [rtcState, setRtcState]             = useState('idle');
-  const [showTimeout, setShowTimeout]       = useState(false);
-  const [peerTyping, setPeerTyping]         = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [rtcState, setRtcState] = useState('idle');
+  const [showTimeout, setShowTimeout] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+
 
   // ── Refs ───────────────────────────────────────────────────────────
-  const cryptoKeyRef           = useRef(null);
-  const autoJoinHandled        = useRef(false);
-  const pendingFilesRef        = useRef([]);
-  const sendingLoopRunning     = useRef(false);
-  const receivingMsgIdRef      = useRef(null);
+  const cryptoKeyRef = useRef(null);
+  const autoJoinHandled = useRef(false);
+  const pendingFilesRef = useRef([]);
+  const sendingLoopRunning = useRef(false);
+  const receivingMsgIdRef = useRef(null);
   const currentSendingMsgIdRef = useRef(null);
-  const chatEndRef             = useRef(null);
-  const typingTimeoutRef       = useRef(null);
-  const handleRelayMessageRef  = useRef(null);
-  const sendReactionRef        = useRef(null);
-  const whiteboardRef          = useRef(null);
+  const chatEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const handleRelayMessageRef = useRef(null);
+  const sendReactionRef = useRef(null);
+  const whiteboardRef = useRef(null);
 
   // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) => setMessages((prev) => [...prev, msg]), []);
@@ -210,8 +212,8 @@ export default function Home() {
       receivingMsgIdRef.current = null;
       const previewUrl =
         blob.type?.startsWith('image/') ||
-        blob.type?.startsWith('video/') ||
-        blob.type?.startsWith('audio/')
+          blob.type?.startsWith('video/') ||
+          blob.type?.startsWith('audio/')
           ? URL.createObjectURL(blob)
           : null;
       setMessages((prev) =>
@@ -244,12 +246,13 @@ export default function Home() {
       setStatus('connected');
     },
 
-    onChatMessage: ({ text, id, timestamp }) => {
+    onChatMessage: ({ text, id, timestamp, replyTo }) => {
       setPeerTyping(false);
       clearTimeout(typingTimeoutRef.current);
       addMsg({
         id: id || genId(), type: 'text', sender: 'peer',
         text, timestamp: timestamp || Date.now(),
+        replyTo: replyTo || null,                        // ← add this
       });
     },
 
@@ -280,14 +283,14 @@ export default function Home() {
   });
 
   // Keep refs in sync
-  useEffect(() => { sendReactionRef.current     = sendReaction;     }, [sendReaction]);
+  useEffect(() => { sendReactionRef.current = sendReaction; }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
     if (autoJoinHandled.current || wsState !== 'connected') return;
-    const params      = new URLSearchParams(window.location.search);
-    const joinToken   = params.get('join');
+    const params = new URLSearchParams(window.location.search);
+    const joinToken = params.get('join');
     const codeFromUrl = params.get('code');
     if (!joinToken) return;
     autoJoinHandled.current = true;
@@ -299,7 +302,7 @@ export default function Home() {
   }, [wsState, send, setupDerivedKey]);
 
   // ── Room actions ───────────────────────────────────────────────────
-  const startSend    = () => { setErrorMsg(''); setMode('send');    send({ type: 'create' }); };
+  const startSend = () => { setErrorMsg(''); setMode('send'); send({ type: 'create' }); };
   const startReceive = () => { setErrorMsg(''); setMode('receive'); setStatus('idle'); };
 
   const joinRoom = async (code) => {
@@ -321,10 +324,10 @@ export default function Home() {
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
     setShowWhiteboard(false);
-    cryptoKeyRef.current           = null;
-    sendingLoopRunning.current     = false;
+    cryptoKeyRef.current = null;
+    sendingLoopRunning.current = false;
     currentSendingMsgIdRef.current = null;
-    receivingMsgIdRef.current      = null;
+    receivingMsgIdRef.current = null;
     clearTimeout(typingTimeoutRef.current);
   };
 
@@ -344,7 +347,7 @@ export default function Home() {
         updateMsg(msgId, { status: 'sent', progress: 100 });
       }
     } finally {
-      sendingLoopRunning.current     = false;
+      sendingLoopRunning.current = false;
       currentSendingMsgIdRef.current = null;
       setStatus('connected');
     }
@@ -369,7 +372,7 @@ export default function Home() {
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
-      const id         = genId();
+      const id = genId();
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
       pendingFilesRef.current = [...pendingFilesRef.current, { file, msgId: id }];
       return {
@@ -393,10 +396,18 @@ export default function Home() {
   // ── Send text ──────────────────────────────────────────────────────
   const handleSendText = useCallback((text) => {
     if (!text) return;
-    const id = sendChatMessage?.(text);
+    const id = sendChatMessage?.(text, replyingTo);   // ← pass replyingTo
     if (id === false || !id) return;
-    addMsg({ id, type: 'text', sender: 'me', text, timestamp: Date.now() });
-  }, [sendChatMessage, addMsg]);
+    addMsg({
+      id, type: 'text', sender: 'me', text,
+      timestamp: Date.now(),
+      replyTo: replyingTo                              // ← store in local message
+        ? { id: replyingTo.id, text: replyingTo.text, name: replyingTo.name, type: replyingTo.type, sender: replyingTo.sender }
+        : null,
+    });
+    setReplyingTo(null);                               // ← clear after send
+  }, [sendChatMessage, addMsg, replyingTo]);
+
 
   // ── Download ───────────────────────────────────────────────────────
   const downloadMsg = useCallback((msg) => {
@@ -477,6 +488,7 @@ export default function Home() {
                         msg={msg}
                         isMine={isMine}
                         onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
+                        onReply={(msg) => setReplyingTo(msg)}              // ← add this
                       />
                     )}
                     {msg.type === 'file' && (
@@ -515,6 +527,8 @@ export default function Home() {
             onSendText={handleSendText}
             onFilesAttach={handleFilesAttach}
             onTyping={sendTyping}
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
           />
 
           {/* Whiteboard overlay */}
