@@ -39,6 +39,7 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
 
   const handleDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragging(false);
     const files = Array.from(e.dataTransfer.files || []);
     if (files.length > 0 && !disabled) onFilesSelect(files);
@@ -60,10 +61,10 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onClick={() => !disabled && inputRef.current?.click()}
-      className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
+      className={`rounded-[28px] border-2 border-dashed p-10 text-center cursor-pointer transition-all duration-300 backdrop-blur-xl
         ${dragging
-          ? 'scale-[1.01] border-slate-500 bg-slate-100'
-          : 'border-slate-300 bg-white hover:border-slate-500 hover:bg-slate-50'
+          ? 'scale-[1.01] border-blue-500 bg-white/80 shadow-2xl shadow-blue-500/10 dark:bg-slate-900/80'
+          : 'border-slate-300/90 bg-white/65 hover:border-blue-400 hover:bg-white/80 dark:border-slate-700 dark:bg-slate-900/65 dark:hover:border-blue-500 dark:hover:bg-slate-900/80'
         }
         ${disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
     >
@@ -78,13 +79,15 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
           e.target.value = '';
         }}
       />
-      <div className={`text-4xl mb-3 transition-transform duration-300 ${dragging ? 'scale-110' : ''}`}>
-        {dragging ? 'Drop' : 'File'}
+      <div className={`mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-white/80 bg-white/90 text-slate-700 shadow-lg transition-transform duration-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 ${dragging ? 'scale-110' : ''}`}>
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M12 12v9m0 0l-3-3m3 3l3-3" />
+        </svg>
       </div>
-      <p className="font-medium text-slate-800">
-        {dragging ? 'Release to add files' : 'Drop files here or click to browse'}
+      <p className="font-semibold text-slate-900 dark:text-slate-100">
+        {dragging ? 'Release to add files to chat' : 'Drop files anywhere in the chat'}
       </p>
-      <p className="mt-1 text-sm text-slate-500">All file types supported</p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Browse locally or drag multiple files in one step</p>
     </div>
   );
 }

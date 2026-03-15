@@ -23,6 +23,7 @@ export function useWebRTC({
   onFileReceived,
   onConnected,
   onTransferError,
+  onTransferCanceled,
   onTransferPaused,   // ← NEW: called when mid-transfer connection drops
   onChatMessage,
   onTyping,
@@ -68,6 +69,14 @@ export function useWebRTC({
       ? wsSend?.({ type: 'relay', payload })
       : dcRef.current?.send(JSON.stringify(payload));
   }, [wsSend]);
+
+  const resetReceiveTransfer = useCallback(() => {
+    recvBuffers.current = [];
+    recvSize.current = 0;
+    fileMeta.current = null;
+    recvTransferRef.current = null;
+    chunksSinceAck.current = 0;
+  }, []);
 
   // ── Core send-buffer ───────────────────────────────────────────────
   const sendBuffer = useCallback(async ({
@@ -309,6 +318,24 @@ export function useWebRTC({
       return;
     }
 
+    if (kind === 'transfer-cancel') {
+      const canceledSender = pendingTransferRef.current?.transferId === message.transferId;
+      const canceledReceiver = recvTransferRef.current?.transferId === message.transferId;
+
+      if (canceledSender) {
+        abortSendRef.current = true;
+        pendingTransferRef.current = null;
+        sendingRef.current = false;
+        onTransferCanceled?.({ transferId: message.transferId, sender: 'me' });
+      }
+
+      if (canceledReceiver) {
+        resetReceiveTransfer();
+        onTransferCanceled?.({ transferId: message.transferId, sender: 'peer' });
+      }
+      return;
+    }
+
     if (kind === 'meta') {
       // Resume: same transferId and we already have bytes
       const isResume = !!message.fromOffset &&
@@ -327,7 +354,12 @@ export function useWebRTC({
       chunksSinceAck.current = 0;
       startTime.current = Date.now();
       recvTransferRef.current = { transferId: message.transferId, receivedBytes: 0 };
-      onFileMeta?.({ name: message.name, size: message.size, type: message.type });
+      onFileMeta?.({
+        transferId: message.transferId,
+        name: message.name,
+        size: message.size,
+        type: message.type,
+      });
       return;
     }
 
@@ -579,10 +611,9 @@ export function useWebRTC({
   }, [wsSend]);
 
   // ── File send ──────────────────────────────────────────────────────
-  const sendFile = useCallback(async (file) => {
+  const sendFile = useCallback(async (file, transferId = makeId()) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
-    const transferId  = makeId();
     const metaPayload = {
       kind: 'meta', version: 2,
       name: file.name, size: file.size,
@@ -615,6 +646,28 @@ export function useWebRTC({
       sendingRef.current = false;
     }
   }, [encryptChunk, onProgress, sendBuffer, sendDone]);
+
+  const cancelTransfer = useCallback((transferId) => {
+    if (!transferId) return false;
+
+    if (pendingTransferRef.current?.transferId === transferId) {
+      abortSendRef.current = true;
+      sendControl({ kind: 'transfer-cancel', transferId });
+      pendingTransferRef.current = null;
+      sendingRef.current = false;
+      onTransferCanceled?.({ transferId, sender: 'me' });
+      return true;
+    }
+
+    if (recvTransferRef.current?.transferId === transferId) {
+      sendControl({ kind: 'transfer-cancel', transferId });
+      resetReceiveTransfer();
+      onTransferCanceled?.({ transferId, sender: 'peer' });
+      return true;
+    }
+
+    return false;
+  }, [onTransferCanceled, resetReceiveTransfer, sendControl]);
 
   // ── Connection info ────────────────────────────────────────────────
   const getConnectionInfo = useCallback(async () => {
@@ -661,6 +714,7 @@ export function useWebRTC({
     handleAnswer,
     handleIceCandidate,
     sendFile,
+    cancelTransfer,
     sendChatMessage,
     sendTyping,
     sendReaction,

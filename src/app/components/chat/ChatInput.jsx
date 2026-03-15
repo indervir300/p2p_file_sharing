@@ -27,14 +27,14 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
   };
 
   return (
-    <div className="shrink-0 px-2 py-2 sm:px-4 sm:py-3">
+    <div className="shrink-0">
 
       {/* ── Replying-to banner ─────────────────────────────────────── */}
       {replyingTo && (
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2">
-          <div className="w-0.5 self-stretch rounded-full bg-slate-400 dark:bg-slate-500 shrink-0" />
+        <div className="mb-3 flex items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/85">
+          <div className="w-1 self-stretch rounded-full bg-blue-500 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-0.5">
+            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
               Replying to {replyingTo.sender === 'me' ? 'yourself' : 'Peer'}
             </p>
             <p className="truncate text-xs text-slate-600 dark:text-slate-300">
@@ -54,12 +54,12 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
       )}
 
       {/* ── Input row ─────────────────────────────────────────────── */}
-      <div className="flex items-end gap-1.5 sm:gap-2">
+      <div className="flex items-end gap-2 rounded-[28px] border border-slate-200/90 bg-white/88 p-2 shadow-lg shadow-slate-900/5 backdrop-blur dark:border-slate-700 dark:bg-slate-900/88 dark:shadow-black/20 sm:gap-3 sm:p-3">
 
         <button
           onClick={() => fileRef.current?.click()}
           title="Attach files"
-          className="shrink-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 sm:p-2.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 sm:p-3"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -76,14 +76,14 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
           onKeyDown={handleKeyDown}
           placeholder={replyingTo ? 'Write a reply…' : 'Message…'}
           rows={1}
-          className="flex-1 resize-none rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-slate-500 dark:focus:border-slate-500 focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-600 transition-colors"
+          className="min-h-12 flex-1 resize-none rounded-2xl border border-transparent bg-transparent px-2 py-2.5 text-sm leading-6 text-slate-800 placeholder-slate-400 outline-none transition-colors focus:border-slate-200 focus:bg-slate-50/70 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-slate-700 dark:focus:bg-slate-800/60 sm:px-3"
           style={{ maxHeight: '120px', overflowY: 'auto' }}
         />
 
         <button
           onClick={send}
           title="Send"
-          className="shrink-0 rounded-xl bg-slate-900 dark:bg-slate-100 p-2 sm:p-2.5 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors"
+          className="shrink-0 rounded-2xl bg-linear-to-r from-blue-600 to-indigo-600 p-2.5 text-white shadow-lg shadow-blue-500/25 transition-transform hover:scale-[1.03] active:scale-[0.98] sm:p-3"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

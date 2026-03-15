@@ -7,6 +7,10 @@
 
 /** Generate a random AES-256-GCM key */
 export async function generateKey() {
+  if (process.env.NODE_ENV !== 'production' && (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle)) {
+    console.warn('Web Crypto API not available. Encryption bypassed in development.');
+    return { type: 'mock-key' };
+  }
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     throw new Error('Web Crypto API not available');
   }
@@ -19,6 +23,7 @@ export async function generateKey() {
 
 /** Export a CryptoKey as a base64url string (URL-safe, no padding) */
 export async function exportKey(key) {
+  if (key && key.type === 'mock-key') return 'mock-key-base64';
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     throw new Error('Web Crypto API not available');
   }
@@ -28,6 +33,7 @@ export async function exportKey(key) {
 
 /** Import a base64url string back to a CryptoKey */
 export async function importKey(base64url) {
+  if (base64url === 'mock-key-base64') return { type: 'mock-key' };
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     throw new Error('Web Crypto API not available');
   }
@@ -46,6 +52,10 @@ export async function importKey(base64url) {
  * This removes the need to copy/paste raw key material between peers.
  */
 export async function deriveKeyFromSecret(secret) {
+  if (process.env.NODE_ENV !== 'production' && (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle)) {
+    console.warn('Web Crypto API not available. Encryption bypassed in development.');
+    return { type: 'mock-key' };
+  }
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     throw new Error('Web Crypto API not available');
   }
@@ -80,6 +90,10 @@ export async function deriveKeyFromSecret(secret) {
 
 /** Encrypt an ArrayBuffer chunk → returns ArrayBuffer (IV prepended) */
 export async function encryptChunk(key, data) {
+  if (key && key.type === 'mock-key') {
+    // Return a copy of the data to simulate ArrayBuffer behavior
+    return data.slice(0);
+  }
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     throw new Error('Web Crypto API not available');
   }
@@ -98,6 +112,10 @@ export async function encryptChunk(key, data) {
 
 /** Decrypt an ArrayBuffer chunk (IV is prepended) → returns ArrayBuffer */
 export async function decryptChunk(key, data) {
+  if (key && key.type === 'mock-key') {
+    // If not encrypted, we just return the raw data
+    return data.slice(0);
+  }
   if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     throw new Error('Web Crypto API not available');
   }

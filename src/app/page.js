@@ -5,8 +5,8 @@ import { useWebRTC }     from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 
 import SessionCode      from '@/app/components/SessionCode';
-import ConnectionStatus from '@/app/components/ConnectionStatus';
 import DarkModeToggle   from '@/app/components/ui/DarkModeToggle';
+import FileDropZone     from '@/app/components/FileDropZone';
 import PeerAvatar       from '@/app/components/chat/PeerAvatar';
 import MessageBubble    from '@/app/components/chat/MessageBubble';
 import FileBubble       from '@/app/components/chat/FileBubble';
@@ -33,11 +33,11 @@ export default function Home() {
   const [messages, setMessages]             = useState([]);
   const [lightboxUrl, setLightboxUrl]       = useState(null);
   const [rtcState, setRtcState]             = useState('idle');
-  const [showTimeout, setShowTimeout]       = useState(false);
   const [peerTyping, setPeerTyping]         = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [replyingTo, setReplyingTo]         = useState(null);
   const [queueVersion, setQueueVersion]     = useState(0);
+  const [dragDepth, setDragDepth]           = useState(0);
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef           = useRef(null);
@@ -183,6 +183,7 @@ export default function Home() {
     handleAnswer,
     handleIceCandidate,
     sendFile,
+    cancelTransfer,
     sendChatMessage,
     sendTyping,
     sendReaction,
@@ -202,8 +203,8 @@ export default function Home() {
       if (activeId) updateMsg(activeId, { progress: p.percent });
     },
 
-    onFileMeta: ({ name, size, type }) => {
-      const id = genId();
+    onFileMeta: ({ transferId, name, size, type }) => {
+      const id = transferId || genId();
       receivingMsgIdRef.current = id;
       addMsg({
         id, type: 'file', sender: 'peer',
@@ -274,6 +275,19 @@ export default function Home() {
         updateMsg(receivingMsgIdRef.current, { status: 'error' });
         receivingMsgIdRef.current = null;
       }
+      setStatus('connected');
+    },
+
+    onTransferCanceled: ({ transferId, sender }) => {
+      if (!transferId) return;
+      updateMsg(transferId, { status: 'canceled', progress: 0 });
+      if (sender === 'peer' && receivingMsgIdRef.current === transferId) {
+        receivingMsgIdRef.current = null;
+      }
+      if (sender === 'me' && currentSendingMsgIdRef.current === transferId) {
+        currentSendingMsgIdRef.current = null;
+      }
+      addSystemMsg(sender === 'me' ? 'Upload canceled.' : 'Incoming file canceled by peer.');
       setStatus('connected');
     },
 
@@ -393,7 +407,7 @@ export default function Home() {
         currentSendingMsgIdRef.current = msgId;
         updateMsg(msgId, { status: 'sending', progress: 0 });
         setStatus('transferring');
-        await sendFile(file);
+        await sendFile(file, msgId);
         // sendFile returns when either done OR paused (for resume)
         // Only advance queue if fully sent (status will be 'sent' via onProgress 100%)
         const msgNow = pendingFilesRef.current[0]; // might have changed
@@ -412,19 +426,10 @@ export default function Home() {
   }, [sendFile, updateMsg, status]);
 
   useEffect(() => {
-    let timer;
-    if (status === 'waiting' && mode) {
-      setShowTimeout(false);
-      timer = setTimeout(() => setShowTimeout(true), 15000);
-    } else {
-      setShowTimeout(false);
-    }
-    return () => clearTimeout(timer);
-  }, [status, mode]);
-
-  useEffect(() => {
     if (status === 'connected' && pendingFilesRef.current.length > 0) runSendLoop();
   }, [status, runSendLoop]);
+
+  const chatReady = status === 'connected' || status === 'transferring';
 
   // ── File attach ────────────────────────────────────────────────────
   const handleFilesAttach = useCallback((files) => {
@@ -445,6 +450,35 @@ export default function Home() {
     if (status === 'connected') runSendLoop();
   }, [status, runSendLoop]);
 
+  const handleDropEnter = useCallback((event) => {
+    if (!chatReady) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+    setDragDepth((depth) => depth + 1);
+  }, [chatReady]);
+
+  const handleDropLeave = useCallback((event) => {
+    if (!chatReady) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+    setDragDepth((depth) => Math.max(0, depth - 1));
+  }, [chatReady]);
+
+  const handleDropOver = useCallback((event) => {
+    if (!chatReady) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+  }, [chatReady]);
+
+  const handleDropFiles = useCallback((event) => {
+    if (!chatReady) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+    setDragDepth(0);
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length) handleFilesAttach(files);
+  }, [chatReady, handleFilesAttach]);
+
   const cancelQueuedFile = useCallback((msgId) => {
     const idx = pendingFilesRef.current.findIndex((x) => x.msgId === msgId);
     if (idx === 0 && status === 'transferring') return;
@@ -454,6 +488,29 @@ export default function Home() {
     }
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   }, [status]);
+
+  const cancelFileTransfer = useCallback((msgId) => {
+    const message = messages.find((item) => item.id === msgId);
+    if (!message) return;
+
+    if (message.status === 'queued') {
+      cancelQueuedFile(msgId);
+      return;
+    }
+
+    const canceled = cancelTransfer(msgId);
+    if (!canceled) return;
+
+    if (message.sender === 'me') {
+      pendingFilesRef.current = pendingFilesRef.current.filter((item) => item.msgId !== msgId);
+      currentSendingMsgIdRef.current = currentSendingMsgIdRef.current === msgId ? null : currentSendingMsgIdRef.current;
+    } else {
+      receivingMsgIdRef.current = receivingMsgIdRef.current === msgId ? null : receivingMsgIdRef.current;
+    }
+
+    setQueueVersion((v) => v + 1);
+    updateMsg(msgId, { status: 'canceled', progress: 0 });
+  }, [cancelQueuedFile, cancelTransfer, messages, updateMsg]);
 
   // ── Reorder queue ──────────────────────────────────────────────────
   const reorderQueue = useCallback((fromIdx, toIdx) => {
@@ -536,36 +593,59 @@ export default function Home() {
     if (msg.blob && !msg.previewUrl) setTimeout(() => URL.revokeObjectURL(url), 1500);
   }, []);
 
-  const chatReady = status === 'connected' || status === 'transferring';
+  const connectionLabel = connectionType?.type === 'relay'
+    ? 'Secure relay'
+    : connectionType
+      ? 'Direct peer'
+      : status === 'transferring'
+        ? 'Transferring'
+        : 'Connecting';
 
   // ────────────────────────────────────────────────────────────────────
   //  Render
   // ────────────────────────────────────────────────────────────────────
   return (
-    <main className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
+    <main
+      className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.16),transparent_32%),linear-gradient(180deg,#f8fbff_0%,#e8eef8_100%)] dark:bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.18),transparent_30%),linear-gradient(180deg,#020617_0%,#0f172a_100%)]"
+      onDragEnter={handleDropEnter}
+      onDragLeave={handleDropLeave}
+      onDragOver={handleDropOver}
+      onDrop={handleDropFiles}
+    >
 
       {/* ══════  CHAT VIEW  ══════ */}
       {chatReady && (
-        <div className="flex h-screen flex-col">
+        <div className="relative flex min-h-screen">
+          <div className="flex h-screen w-full flex-col overflow-hidden bg-transparent backdrop-blur-xl">
 
           {/* Header */}
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-3 shadow-sm sm:px-4">
-            <div className="flex items-center gap-2 min-w-0 sm:gap-3">
+          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/55 px-4 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/40 sm:px-5 lg:px-6">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <button
                 onClick={reset}
-                className="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors sm:px-3"
+                className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 sm:px-4"
               >
                 ← Leave
               </button>
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
-              </p>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100 sm:text-base">
+                    {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
+                  </p>
+                  <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline-flex">
+                    {connectionLabel}
+                  </span>
+                </div>
+                <p className="mt-0.5 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
+                  Focused chat, file drops, and whiteboard in one workspace.
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 onClick={() => setShowWhiteboard(true)}
                 title="Open whiteboard"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -578,67 +658,79 @@ export default function Home() {
           </header>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 sm:px-4 sm:py-5 bg-slate-50 dark:bg-slate-950">
-            {messages.length === 0 && (
-              <p className="mt-12 text-center text-xs text-slate-400">
-                Say hi, or tap the paperclip to send a file 📎
-              </p>
-            )}
+          <div className="flex-1 overflow-y-auto bg-transparent px-3 py-4 sm:px-4 sm:py-5 lg:px-6">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+              {messages.length === 0 && (
+                <div className="mx-auto mt-8 max-w-md rounded-[28px] border border-white/70 bg-white/75 px-6 py-8 text-center shadow-lg shadow-slate-900/5 backdrop-blur dark:border-slate-800 dark:bg-slate-900/75 dark:shadow-black/10">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400">
+                    <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
+                    </svg>
+                  </div>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Your conversation starts here
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                    Send a message, drop a file, or open the whiteboard. This layout now stays focused like a real chat window.
+                  </p>
+                </div>
+              )}
 
-            {messages.map((msg) => {
-              if (msg.type === 'system') {
+              {messages.map((msg) => {
+                if (msg.type === 'system') {
+                  return (
+                    <div key={msg.id} className="flex justify-center py-1">
+                      <span className="rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/75 dark:text-slate-400">
+                        {msg.text}
+                      </span>
+                    </div>
+                  );
+                }
+
+                const isMine = msg.sender === 'me';
                 return (
-                  <div key={msg.id} className="flex justify-center py-1">
-                    <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-3 py-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      {msg.text}
-                    </span>
+                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className="min-w-0 max-w-[84%] sm:max-w-[72%] lg:max-w-[62%]">
+
+                      {msg.type === 'text' && (
+                        <MessageBubble
+                          msg={msg}
+                          isMine={isMine}
+                          onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
+                          onReply={(m) => setReplyingTo(m)}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                        />
+                      )}
+
+                      {msg.type === 'file' && (
+                        <FileBubble
+                          msg={msg}
+                          isMine={isMine}
+                          onDownload={downloadMsg}
+                          onPreview={(url) => setLightboxUrl(url)}
+                          onCancel={cancelQueuedFile}
+                        />
+                      )}
+
+                      <p className={`mt-1 px-1 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400 ${isMine ? 'text-right' : 'text-left'}`}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
                   </div>
                 );
-              }
+              })}
 
-              const isMine = msg.sender === 'me';
-              return (
-                <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className="max-w-[85%] min-w-0 sm:max-w-[75%]">
-
-                    {msg.type === 'text' && (
-                      <MessageBubble
-                        msg={msg}
-                        isMine={isMine}
-                        onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
-                        onReply={(m) => setReplyingTo(m)}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                      />
-                    )}
-
-                    {msg.type === 'file' && (
-                      <FileBubble
-                        msg={msg}
-                        isMine={isMine}
-                        onDownload={downloadMsg}
-                        onPreview={(url) => setLightboxUrl(url)}
-                        onCancel={cancelQueuedFile}
-                      />
-                    )}
-
-                    <p className={`mt-0.5 text-[10px] text-slate-400 ${isMine ? 'text-right' : 'text-left'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit', minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-
-            {peerTyping && <TypingIndicator />}
-            <div ref={chatEndRef} />
+              {peerTyping && <TypingIndicator />}
+              <div ref={chatEndRef} />
+            </div>
           </div>
 
           {/* Error banner */}
           {errorMsg && (
-            <div className="shrink-0 bg-red-50 dark:bg-red-950 px-4 py-2 text-center text-xs text-red-700 dark:text-red-300">
+            <div className="shrink-0 border-t border-red-200 bg-red-50/95 px-4 py-2 text-center text-xs text-red-700 backdrop-blur dark:border-red-900 dark:bg-red-950/90 dark:text-red-300">
               {errorMsg}
               <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
                 Dismiss
@@ -646,26 +738,30 @@ export default function Home() {
             </div>
           )}
 
-          {/* Send queue */}
-          <SendQueue
-            key={queueVersion}
-            queue={pendingFilesRef.current.map(({ file, msgId }) => ({
-              file, msgId,
-              status:   messages.find((m) => m.id === msgId)?.status   || 'queued',
-              progress: messages.find((m) => m.id === msgId)?.progress || 0,
-            }))}
-            onReorder={reorderQueue}
-            onCancel={cancelQueuedFile}
-          />
+          <div className="shrink-0 border-t border-slate-200/80 bg-white/30 px-3 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/25 sm:px-4 lg:px-6">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+              {/* Send queue */}
+              <SendQueue
+                key={queueVersion}
+                queue={pendingFilesRef.current.map(({ file, msgId }) => ({
+                  file, msgId,
+                  status:   messages.find((m) => m.id === msgId)?.status   || 'queued',
+                  progress: messages.find((m) => m.id === msgId)?.progress || 0,
+                }))}
+                onReorder={reorderQueue}
+                onCancel={cancelFileTransfer}
+              />
 
-          {/* Chat input */}
-          <ChatInput
-            onSendText={handleSendText}
-            onFilesAttach={handleFilesAttach}
-            onTyping={sendTyping}
-            replyingTo={replyingTo}
-            onCancelReply={() => setReplyingTo(null)}
-          />
+              {/* Chat input */}
+              <ChatInput
+                onSendText={handleSendText}
+                onFilesAttach={handleFilesAttach}
+                onTyping={sendTyping}
+                replyingTo={replyingTo}
+                onCancelReply={() => setReplyingTo(null)}
+              />
+            </div>
+          </div>
 
           {/* Whiteboard overlay */}
           {showWhiteboard && (
@@ -675,22 +771,39 @@ export default function Home() {
               onClose={() => setShowWhiteboard(false)}
             />
           )}
+          </div>
+
+          {dragDepth > 0 && (
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 p-5 backdrop-blur-[2px] dark:bg-slate-950/30">
+              <div className="pointer-events-auto w-full max-w-2xl">
+                <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ══════  LOBBY VIEW  ══════ */}
       {!chatReady && (
-        <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 relative">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
 
-            <div className="flex justify-end mb-2">
+            <div className="flex justify-between items-center mb-6">
+              {mode ? (
+                <button
+                  onClick={reset}
+                  className="group flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
+                >
+                  <svg className="h-4 w-4 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                  Back
+                </button>
+              ) : <div />}
               <DarkModeToggle />
             </div>
 
             <header className="mb-8 text-center">
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-                Secure Peer-to-Peer
-              </p>
               <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
                 FileShare &amp; Chat
               </h1>
@@ -699,23 +812,41 @@ export default function Home() {
               </p>
             </header>
 
-            <div className="mb-6">
-              <ConnectionStatus wsState={wsState} encrypted={!!cryptoKeyRef.current} />
-            </div>
-
             {!mode && (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-4">
                 <button
                   onClick={startSend}
-                  className="rounded-xl bg-slate-900 dark:bg-slate-100 px-6 py-4 text-base font-semibold text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors"
+                  className="group relative flex w-full items-center justify-between rounded-2xl bg-linear-to-r from-blue-600 to-indigo-600 px-6 py-5 shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl active:scale-95"
                 >
-                  Start Session
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-xl font-bold text-white">Create Room</span>
+                    <span className="text-sm text-blue-100">Start sharing and chatting</span>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition-transform group-hover:rotate-12">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
                 </button>
+                
+                <div className="relative flex items-center justify-center py-2">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700"></div></div>
+                  <span className="relative bg-white dark:bg-slate-900 px-4 text-xs font-medium text-slate-400">OR</span>
+                </div>
+
                 <button
                   onClick={startReceive}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 py-4 text-base font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  className="group relative flex w-full items-center justify-between rounded-2xl border-2 border-slate-200 bg-white px-6 py-5 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600 dark:hover:bg-slate-700"
                 >
-                  Join Session
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-xl font-bold text-slate-800 dark:text-white">Join Room</span>
+                    <span className="text-sm text-slate-500 dark:text-slate-400">Enter a code to connect</span>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-transform group-hover:translate-x-1 dark:bg-slate-700 dark:text-slate-300">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </div>
                 </button>
               </div>
             )}
@@ -728,68 +859,10 @@ export default function Home() {
               <SessionCode mode="send" code={sessionCode} token={roomToken} />
             )}
 
-            {mode && status === 'waiting' && (
-              <div className="space-y-4">
-                <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-8 text-center">
-                  <div className="relative">
-                    <span className="absolute inset-0 block h-full w-full animate-ping rounded-full bg-slate-200 dark:bg-slate-600 opacity-75" />
-                    <span className="relative block h-3 w-3 rounded-full bg-slate-400 dark:bg-slate-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      {mode === 'send' ? 'Waiting for peer to join…' : 'Connecting to session…'}
-                    </p>
-                    <p className="mt-1 text-[11px] uppercase tracking-widest text-slate-400">
-                      Status: {rtcState === 'idle' ? 'Negotiating' : rtcState.replace(/-/g, ' ')}
-                    </p>
-                  </div>
-                </div>
-
-                {(rtcState === 'failed' || rtcState === 'relay') && (
-                  <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-                    <p className="font-semibold">
-                      {rtcState === 'relay' ? 'Switched to relay mode' : 'Connection failed'}
-                    </p>
-                    <p className="mt-1 text-xs opacity-80">
-                      {rtcState === 'relay'
-                        ? 'Direct P2P was blocked. Using server relay — still encrypted.'
-                        : 'Restricted network detected. Switching to relay…'}
-                    </p>
-                  </div>
-                )}
-
-                {showTimeout && rtcState !== 'connected' && rtcState !== 'relay' && (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Taking longer than expected?
-                    </p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                      The app will automatically switch to relay mode. Please wait.
-                    </p>
-                    <button
-                      onClick={reset}
-                      className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-600 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      Cancel and Try Again
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
             {errorMsg && (
               <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 px-4 py-3 text-center text-sm text-red-700 dark:text-red-300">
                 {errorMsg}
               </div>
-            )}
-
-            {mode && (
-              <button
-                onClick={reset}
-                className="mt-6 w-full rounded-xl border border-slate-300 dark:border-slate-700 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                Start Over
-              </button>
             )}
 
             <footer className="mt-8 text-center text-xs text-slate-400">

@@ -75,8 +75,8 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
   if (!queue.length) return null;
 
   return (
-    <div className="shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">
+    <div className="rounded-2xl border border-slate-200/90 bg-white/82 px-3 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
         Send Queue — drag to reorder
       </p>
       <div className="flex flex-col gap-1">
@@ -92,12 +92,12 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
             onTouchStart={(e) => onTouchStart(e, idx)}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
-            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-all select-none ${
+            className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-xs transition-all select-none ${
               draggingIdx === idx
                 ? 'opacity-40'
                 : overIdx === idx
                 ? 'bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700'
-                : 'bg-slate-50 dark:bg-slate-800'
+                : 'bg-slate-50 dark:bg-slate-800/90'
             } ${idx === 0 ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
           >
             {/* Drag handle — hidden for active item */}
@@ -124,7 +124,7 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
               </span>
             )}
 
-            {idx !== 0 && (
+            {(idx !== 0 || ['sending', 'receiving', 'paused'].includes(status)) && (
               <button
                 onClick={() => onCancel(msgId)}
                 className="shrink-0 rounded p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"

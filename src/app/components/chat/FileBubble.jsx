@@ -25,12 +25,12 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
     !['sending', 'receiving', 'queued'].includes(status);
 
   const bubble = isMine
-    ? 'bg-slate-900 dark:bg-slate-700 text-white'
-    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100';
+    ? 'bg-gradient-to-br from-slate-900 to-slate-800 text-white dark:from-slate-700 dark:to-slate-700'
+    : 'bg-white/95 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100';
 
   return (
     <>
-      <div className={`w-64 sm:w-72 max-w-[80vw] rounded-2xl overflow-hidden shadow-sm ${bubble}`}>
+      <div className={`w-[18rem] sm:w-[20rem] max-w-[80vw] overflow-hidden rounded-3xl shadow-sm ${bubble}`}>
 
         {/* ── Image preview ─────────────────────────────────────────── */}
         {isImg && previewUrl && (
@@ -53,8 +53,8 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
         {/* ── Non-media file row ────────────────────────────────────── */}
         {!isImg && !isVid && !(isAud && previewUrl && !isBusy) && (
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}>
+          <div className="flex items-center gap-3 px-4 py-4">
+            <div className={`shrink-0 rounded-2xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}>
               <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`}
                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -74,14 +74,14 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
         {/* Name + size under media */}
         {(isImg || isVid || (isAud && previewUrl && !isBusy)) && (
-          <p className={`truncate px-3 pt-1.5 text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
+          <p className={`truncate px-4 pt-2 text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
             {name} · {formatSize(size)}
           </p>
         )}
 
         {/* ── Progress bar ──────────────────────────────────────────── */}
         {(isBusy || status === 'paused') && (
-          <div className={`mx-3 my-2 h-1.5 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'}`}>
+          <div className={`mx-4 my-2 h-1.5 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'}`}>
             <div
               className={`h-1.5 rounded-full transition-all duration-300 ${
                 status === 'paused' ? 'bg-amber-400'
@@ -93,11 +93,12 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
         )}
 
         {/* ── Footer row ────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+        <div className="flex items-center justify-between gap-2 px-4 pb-4 pt-2">
           <span className={`text-xs ${isMine ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'}`}>
             {status === 'queued'    && 'Queued…'}
             {status === 'sending'   && `Sending ${progress}%`}
             {status === 'paused'    && `Paused · ${progress}% — resuming…`}
+            {status === 'canceled'  && 'Canceled'}
             {status === 'sent'      && '✓ Sent'}
             {status === 'receiving' && `Receiving ${progress}%`}
             {status === 'error'     && '✗ Error'}
@@ -105,9 +106,13 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
           <div className="flex items-center gap-1.5">
             {/* Cancel queued */}
-            {status === 'queued' && isMine && onCancel && (
+            {['queued', 'sending', 'receiving', 'paused'].includes(status) && onCancel && (
               <button onClick={() => onCancel(msg.id)}
-                className="rounded-lg border border-white/20 px-2 py-0.5 text-xs text-white/60 hover:bg-white/10 transition-colors">
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  isMine
+                    ? 'border-white/20 text-white/70 hover:bg-white/10'
+                    : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}>
                 Cancel
               </button>
             )}

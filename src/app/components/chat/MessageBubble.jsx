@@ -33,10 +33,10 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
   // ── Deleted placeholder ────────────────────────────────────────────
   if (msg.deleted) {
     return (
-      <div className={`rounded-2xl px-4 py-2.5 text-sm italic select-none ${
+      <div className={`rounded-3xl px-4 py-3 text-sm italic shadow-sm select-none ${
         isMine
-          ? 'rounded-br-sm bg-slate-700/40 text-white/30'
-          : 'rounded-bl-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500'
+          ? 'rounded-br-md bg-slate-700/45 text-white/30'
+          : 'rounded-bl-md border border-slate-200 bg-white/90 text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500'
       }`}>
         🚫 Message deleted
       </div>
@@ -49,10 +49,10 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
       {/* ── Reply quote ─────────────────────────────────────────────── */}
       {msg.replyTo && (
         <div className={`mb-1 flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-          <div className={`max-w-[90%] rounded-xl px-3 py-1.5 text-xs border-l-2 select-none ${
+          <div className={`max-w-[90%] rounded-2xl px-3 py-2 text-xs border-l-[3px] shadow-sm select-none ${
             isMine
-              ? 'bg-slate-800/60 dark:bg-slate-700/60 border-slate-400 text-slate-300'
-              : 'bg-slate-100 dark:bg-slate-700 border-slate-400 text-slate-500 dark:text-slate-400'
+              ? 'border-sky-300 bg-slate-800/60 text-slate-300 dark:bg-slate-700/60'
+              : 'border-sky-400 bg-white/75 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
           }`}>
             <p className="font-semibold mb-0.5 text-[10px] uppercase tracking-wide opacity-70">
               {msg.replyTo.sender === 'me' ? 'You' : 'Peer'}
@@ -66,10 +66,10 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
       {/* ── Bubble / Edit mode ──────────────────────────────────────── */}
       {isEditing ? (
-        <div className={`rounded-2xl px-3 py-2 ${
+        <div className={`rounded-3xl px-4 py-3 shadow-sm ${
           isMine
-            ? 'rounded-br-sm bg-slate-900 dark:bg-slate-700'
-            : 'rounded-bl-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'
+            ? 'rounded-br-md bg-slate-900 dark:bg-slate-700'
+            : 'rounded-bl-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
         }`}>
           <textarea
             ref={editRef}
@@ -107,10 +107,10 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
         </div>
       ) : (
         <div
-          className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words select-none ${
+          className={`rounded-3xl px-4 py-3 text-sm leading-7 whitespace-pre-wrap break-words shadow-sm select-none ${
             isMine
-              ? 'rounded-br-sm bg-slate-900 dark:bg-slate-700 text-white'
-              : 'rounded-bl-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100'
+              ? 'rounded-br-md bg-gradient-to-br from-slate-900 to-slate-800 text-white dark:from-slate-700 dark:to-slate-700'
+              : 'rounded-bl-md border border-slate-200/90 bg-white/95 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
           }`}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
@@ -132,9 +132,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
       {/* ── Hover action buttons ─────────────────────────────────────── */}
       {!isEditing && (
-        <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5
-          opacity-0 group-hover:opacity-100 transition-opacity
-          ${isMine ? '-left-[88px]' : '-right-[88px]'}`}
+        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-1.5 py-1 shadow-lg shadow-slate-900/8 opacity-0 transition-all group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-black/20
+          ${isMine ? 'left-2 group-hover:-translate-y-1' : 'right-2 group-hover:-translate-y-1'}`}
         >
           {/* Reply */}
           <button onClick={() => onReply?.(msg)} title="Reply"
@@ -187,12 +186,12 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
       {/* ── Reaction bubbles ─────────────────────────────────────────── */}
       {reactionList.length > 0 && (
-        <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+        <div className={`mt-1 flex flex-wrap gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
           {reactionList.map(([emoji, r]) => {
             const count = (r.mine ? 1 : 0) + (r.peer ? 1 : 0);
             return (
               <button key={emoji} onClick={() => onReact?.(msg.id, emoji)}
-                className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs shadow-sm transition-colors ${
+                className={`flex items-center gap-0.5 rounded-full border px-2 py-1 text-xs shadow-sm transition-colors ${
                   r.mine
                     ? 'bg-indigo-50 dark:bg-indigo-900/50 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
