@@ -1,10 +1,8 @@
 'use client';
 import { useState, useRef } from 'react';
-import QRCodeModal from '@/app/components/lobby/QRCodeModal';
 
 export default function SessionCode({ mode, code, token, onJoin }) {
   const [inputCode, setInputCode] = useState('');
-  const [showQR, setShowQR]       = useState(false);
   const inputRef                  = useRef(null);
 
   const joinUrl = code && token
@@ -20,63 +18,52 @@ export default function SessionCode({ mode, code, token, onJoin }) {
   if (mode === 'send') {
     return (
       <>
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-          {/* Label strip */}
-          <div className="bg-linear-to-r from-blue-600 to-indigo-600 px-5 py-2.5">
-            <p className="text-xs font-bold uppercase tracking-widest text-blue-100 text-center">
+        <div className="overflow-hidden rounded-3xl bg-white/95 p-5 shadow-xl shadow-slate-900/10 dark:bg-slate-900/90 sm:p-6">
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600 dark:text-blue-400">
               Share this code
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+              Your meeting is ready
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Send this code or link to anyone you want to invite.
             </p>
           </div>
 
           {code ? (
             <>
-              {/* Code + inline copy */}
-              <div className="flex items-center justify-between gap-3 px-5 py-5 border-b border-slate-100 dark:border-slate-700">
-                <p className="font-mono text-5xl font-black tracking-widest text-slate-900 dark:text-slate-100 leading-none">
-                  {code}
+              <div className="rounded-2xl bg-slate-100/80 p-4 dark:bg-slate-800/80">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                  Meeting code
                 </p>
-                <CopyCodeButton code={code} />
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="font-mono text-4xl font-bold leading-none tracking-[0.2em] text-slate-900 dark:text-slate-100 sm:text-5xl">
+                    {code}
+                  </p>
+                  <CopyCodeButton code={code} />
+                </div>
               </div>
 
-              {/* Action row */}
-              <div className="flex gap-2 p-4">
+              <div className="mt-4 flex gap-2">
                 {joinUrl && <CopyLinkButton url={joinUrl} />}
-                {joinUrl && (
-                  <button
-                    onClick={() => setShowQR(true)}
-                    title="Show QR Code"
-                    className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:border-slate-300 hover:bg-slate-50 dark:hover:border-slate-600 dark:hover:bg-slate-700 transition-all active:scale-[0.97] shrink-0"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                    </svg>
-                    QR
-                  </button>
-                )}
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 py-10">
+            <div className="flex min-h-41 flex-col items-center justify-center gap-3 rounded-2xl bg-slate-100/80 p-6 dark:bg-slate-800/80">
               <div className="h-8 w-8 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin dark:border-blue-900 dark:border-t-blue-500" />
-              <span className="text-sm font-medium text-slate-500">Generating secure room...</span>
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Creating your meeting code...</span>
             </div>
           )}
         </div>
 
-        {showQR && joinUrl && (
-          <QRCodeModal
-            url={joinUrl}
-            code={code}
-            onClose={() => setShowQR(false)}
-          />
-        )}
       </>
     );
   }
 
   // Receive mode
   return (
-    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+    <div className="rounded-2xl bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
       <div className="bg-linear-to-r from-blue-600 to-indigo-600 px-5 py-2.5">
         <p className="text-xs font-bold uppercase tracking-widest text-blue-100 text-center">
           Enter Room Code
@@ -121,22 +108,13 @@ function CopyCodeButton({ code }) {
     <button
       onClick={copy}
       title="Copy code"
-      className={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-4 py-3 text-xs font-bold transition-all active:scale-95 shrink-0 ${
+      className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold transition-all active:scale-95 ${
         copied
-          ? 'border-emerald-400 bg-emerald-50 text-emerald-600 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
-          : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-600 dark:hover:bg-blue-950 dark:hover:text-blue-400'
+          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+          : 'bg-blue-600 text-white shadow-md shadow-blue-600/30 hover:bg-blue-700'
       }`}
     >
-      {copied ? (
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-        </svg>
-      ) : (
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      )}
-      {copied ? 'Copied!' : 'Copy'}
+      {copied ? 'Copied' : 'Copy code'}
     </button>
   );
 }
@@ -153,7 +131,7 @@ function CopyLinkButton({ url }) {
   return (
     <button
       onClick={copy}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all active:scale-[0.97] ${
+      className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all active:scale-[0.97] ${
         copied
           ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/25'
           : 'bg-linear-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30'

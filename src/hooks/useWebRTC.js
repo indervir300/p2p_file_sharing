@@ -35,6 +35,7 @@ export function useWebRTC({
   onStateChange,
   onMediaError,
   onMeetingStart,
+  onPresence,
   encryptChunk,
   decryptChunk,
   wsSend,
@@ -54,8 +55,10 @@ export function useWebRTC({
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [localPresentationStream, setLocalPresentationStream] = useState(null);
   const [remoteAudioMuted, setRemoteAudioMuted] = useState(false);
   const [remoteVideoOff, setRemoteVideoOff] = useState(false);
+  const [remoteScreenSharing, setRemoteScreenSharing] = useState(false);
   const screenStreamRef  = useRef(null);
   const screenSenderRef  = useRef(null); // sender being used during an active screen share
   const localStreamRef   = useRef(null); // always-current mirror of localStream state
@@ -277,11 +280,22 @@ export function useWebRTC({
     if (kind?.startsWith('wb-')) { onWhiteboardEvent?.(message); return; }
     if (kind === 'typing')       { onTyping?.(); return; }
     if (kind === 'meeting-start'){ onMeetingStart?.(); return; }
+    if (kind === 'presence')     { onPresence?.(message); return; }
     if (kind === 'media-state') {
+      if (message.meetingStopped) {
+        setRemoteScreenSharing(false);
+        setRemoteAudioMuted(false);
+        setRemoteVideoOff(false);
+        setRemoteStream(null);
+        return;
+      }
       if (message.audioMuted !== undefined) setRemoteAudioMuted(message.audioMuted);
       // Apply videoOff first, then let screenSharing=true override it
       if (message.videoOff !== undefined) setRemoteVideoOff(message.videoOff);
-      if (message.screenSharing === true) setRemoteVideoOff(false);
+      if (message.screenSharing !== undefined) {
+        setRemoteScreenSharing(!!message.screenSharing);
+        if (message.screenSharing === true) setRemoteVideoOff(false);
+      }
       return;
     }
 
@@ -392,6 +406,7 @@ export function useWebRTC({
   }, [
     onTyping, onReaction, onChatMessage, onWhiteboardEvent,
     onMessageEdit, onMessageDelete, onLinkPreview,
+    onMeetingStart, onPresence,
     onProgress, onFileMeta, processTransferDone, sendBuffer, sendDone, wsSend,
   ]);
 
@@ -601,6 +616,16 @@ export function useWebRTC({
     else if (dcRef.current?.readyState === 'open') { dcRef.current.send(JSON.stringify(payload)); }
   }, [wsSend]);
 
+  const renegotiatePeer = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc || pc.signalingState === 'closed') return;
+    // Avoid overlapping offers; remote side will answer and complete cycle.
+    if (pc.signalingState !== 'stable') return;
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    onSignal({ type: 'offer', payload: offer });
+  }, [onSignal]);
+
   const startMeetingStreams = useCallback(async (opts = { audio: true, video: true }) => {
     let stream = null;
     let fallbackError = null;
@@ -683,25 +708,111 @@ export function useWebRTC({
     }
   }, [onSignal, onMediaError, broadcastMediaState, wsSend]);
 
-  const toggleAudio = useCallback(() => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioMuted(!audioTrack.enabled);
-      }
-    }
-  }, [localStream]);
+  const toggleAudio = useCallback(async () => {
+    const stream = localStreamRef.current;
+    let audioTrack = stream?.getAudioTracks?.()[0];
 
-  const toggleVideo = useCallback(() => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoOff(!videoTrack.enabled);
-      }
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      const nextMuted = !audioTrack.enabled;
+      setIsAudioMuted(nextMuted);
+      broadcastMediaState({
+        audioMuted: nextMuted,
+        videoOff: isVideoOff,
+        screenSharing: isScreenSharing,
+      });
+      return;
     }
-  }, [localStream]);
+
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const newTrack = micStream.getAudioTracks()[0];
+      if (!newTrack) return;
+
+      const nextStream = stream || new MediaStream();
+      nextStream.addTrack(newTrack);
+      if (!stream) {
+        localStreamRef.current = nextStream;
+        setLocalStream(nextStream);
+      }
+
+      const pc = pcRef.current;
+      if (pc && pc.signalingState !== 'closed') {
+        const audioSender = pc.getTransceivers()
+          .find((t) => t.receiver?.track?.kind === 'audio')?.sender
+          || pc.getSenders().find((s) => s.track?.kind === 'audio');
+
+        if (audioSender) {
+          await audioSender.replaceTrack(newTrack);
+        } else {
+          pc.addTrack(newTrack, nextStream);
+        }
+        await renegotiatePeer();
+      }
+
+      setIsAudioMuted(false);
+      broadcastMediaState({
+        audioMuted: false,
+        videoOff: isVideoOff,
+        screenSharing: isScreenSharing,
+      });
+    } catch (err) {
+      onMediaError?.(err);
+    }
+  }, [broadcastMediaState, isVideoOff, isScreenSharing, renegotiatePeer, onMediaError]);
+
+  const toggleVideo = useCallback(async () => {
+    const stream = localStreamRef.current;
+    let videoTrack = stream?.getVideoTracks?.()[0];
+
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      const nextVideoOff = !videoTrack.enabled;
+      setIsVideoOff(nextVideoOff);
+      broadcastMediaState({
+        audioMuted: isAudioMuted,
+        videoOff: nextVideoOff,
+        screenSharing: isScreenSharing,
+      });
+      return;
+    }
+
+    try {
+      const camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const newTrack = camStream.getVideoTracks()[0];
+      if (!newTrack) return;
+
+      const nextStream = stream || new MediaStream();
+      nextStream.addTrack(newTrack);
+      if (!stream) {
+        localStreamRef.current = nextStream;
+        setLocalStream(nextStream);
+      }
+
+      const pc = pcRef.current;
+      if (pc && pc.signalingState !== 'closed') {
+        const videoSender = pc.getTransceivers()
+          .find((t) => t.receiver?.track?.kind === 'video')?.sender
+          || pc.getSenders().find((s) => s.track?.kind === 'video');
+
+        if (videoSender) {
+          await videoSender.replaceTrack(newTrack);
+        } else {
+          pc.addTrack(newTrack, nextStream);
+        }
+        await renegotiatePeer();
+      }
+
+      setIsVideoOff(false);
+      broadcastMediaState({
+        audioMuted: isAudioMuted,
+        videoOff: false,
+        screenSharing: isScreenSharing,
+      });
+    } catch (err) {
+      onMediaError?.(err);
+    }
+  }, [broadcastMediaState, isAudioMuted, isScreenSharing, renegotiatePeer, onMediaError]);
 
   const stopMeeting = useCallback(() => {
     if (localStream) {
@@ -727,9 +838,17 @@ export function useWebRTC({
     setIsAudioMuted(false);
     setIsVideoOff(false);
     setIsScreenSharing(false);
+    setLocalPresentationStream(null);
+    setRemoteScreenSharing(false);
     
     // Explicitly notify remote that we stopped
-    const payload = { kind: 'media-state', meetingStopped: true };
+    const payload = {
+      kind: 'media-state',
+      meetingStopped: true,
+      screenSharing: false,
+      audioMuted: false,
+      videoOff: false,
+    };
     if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); }
     else if (dcRef.current?.readyState === 'open') { dcRef.current.send(JSON.stringify(payload)); }
     
@@ -741,8 +860,13 @@ export function useWebRTC({
       if (isScreenSharing && screenStreamRef.current) {
         // ── Stop screen sharing ──────────────────────────────────────
         const screenTrack = screenStreamRef.current.getVideoTracks()[0];
-        if (screenTrack) screenTrack.stop();
+        if (screenTrack) {
+          // Prevent double stop flow through onended when we stop manually.
+          screenTrack.onended = null;
+          screenTrack.stop();
+        }
         screenStreamRef.current = null;
+        setLocalPresentationStream(null);
 
         const sender = screenSenderRef.current;
         screenSenderRef.current = null;
@@ -752,12 +876,11 @@ export function useWebRTC({
           if (videoTrack?.enabled) {
             // Revert the sender back to the camera track
             await sender.replaceTrack(videoTrack);
+            await renegotiatePeer();
           } else {
             // No camera to revert to — remove the sender and renegotiate
             pcRef.current.removeTrack(sender);
-            const offer = await pcRef.current.createOffer();
-            await pcRef.current.setLocalDescription(offer);
-            onSignal({ type: 'offer', payload: offer });
+            await renegotiatePeer();
           }
         }
 
@@ -769,6 +892,7 @@ export function useWebRTC({
         // ── Start screen sharing ─────────────────────────────────────
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         screenStreamRef.current = screenStream;
+        setLocalPresentationStream(screenStream);
         const screenTrack = screenStream.getVideoTracks()[0];
 
         // Find an existing video sender (camera may be on or off)
@@ -777,12 +901,12 @@ export function useWebRTC({
         if (sender) {
           // Swap the camera track for the screen track (no renegotiation needed)
           await sender.replaceTrack(screenTrack);
+          // Some browsers need a renegotiation round for remote render updates.
+          await renegotiatePeer();
         } else {
           // No video sender exists (user joined without camera) — add track and renegotiate
           sender = pcRef.current.addTrack(screenTrack, screenStream);
-          const offer = await pcRef.current.createOffer();
-          await pcRef.current.setLocalDescription(offer);
-          onSignal({ type: 'offer', payload: offer });
+          await renegotiatePeer();
         }
 
         screenSenderRef.current = sender;
@@ -792,18 +916,16 @@ export function useWebRTC({
           const videoTrack = localStream?.getVideoTracks()[0];
           const currentSender = screenSenderRef.current;
           screenStreamRef.current = null;
+          setLocalPresentationStream(null);
           screenSenderRef.current = null;
 
           if (currentSender && pcRef.current) {
             if (videoTrack?.enabled) {
               await currentSender.replaceTrack(videoTrack);
+              await renegotiatePeer();
             } else {
               pcRef.current.removeTrack(currentSender);
-              if (pcRef.current.signalingState !== 'closed') {
-                const offer = await pcRef.current.createOffer();
-                await pcRef.current.setLocalDescription(offer);
-                onSignal({ type: 'offer', payload: offer });
-              }
+              await renegotiatePeer();
             }
           }
 
@@ -814,6 +936,7 @@ export function useWebRTC({
         };
 
         setIsScreenSharing(true);
+        setIsVideoOff(false);
         // Clear the remote's "Camera Off" overlay — screen video is now active
         broadcastMediaState({ screenSharing: true, videoOff: false });
       }
@@ -823,10 +946,11 @@ export function useWebRTC({
         screenStreamRef.current.getTracks().forEach(t => t.stop());
         screenStreamRef.current = null;
       }
+      setLocalPresentationStream(null);
       screenSenderRef.current = null;
       console.warn('Screen share error:', err);
     }
-  }, [isScreenSharing, localStream, onSignal, broadcastMediaState]);
+  }, [isScreenSharing, localStream, broadcastMediaState, renegotiatePeer]);
 
   // ── Typing ─────────────────────────────────────────────────────────
   const sendTyping = useCallback(() => {
@@ -896,6 +1020,13 @@ export function useWebRTC({
     if (isRelayMode.current) { wsSend?.({ type: 'relay', payload: event }); return; }
     const dc = dcRef.current;
     if (dc?.readyState === 'open') dc.send(JSON.stringify(event));
+  }, [wsSend]);
+
+  const sendPresenceEvent = useCallback((type, meta = {}) => {
+    const payload = { kind: 'presence', type, timestamp: Date.now(), ...meta };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
+    const dc = dcRef.current;
+    if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
   }, [wsSend]);
 
   // ── File send ──────────────────────────────────────────────────────
@@ -1011,6 +1142,7 @@ export function useWebRTC({
     sendDelete,
     sendLinkPreview,
     sendWhiteboardEvent,
+    sendPresenceEvent,
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
@@ -1024,7 +1156,9 @@ export function useWebRTC({
     isAudioMuted,
     isVideoOff,
     isScreenSharing,
+    localPresentationStream,
     remoteAudioMuted,
     remoteVideoOff,
+    remoteScreenSharing,
   };
 }

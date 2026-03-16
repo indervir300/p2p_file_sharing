@@ -7,7 +7,6 @@ import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCryp
 import SessionCode      from '@/app/components/SessionCode';
 import DarkModeToggle   from '@/app/components/ui/DarkModeToggle';
 import FileDropZone     from '@/app/components/FileDropZone';
-import PeerAvatar       from '@/app/components/chat/PeerAvatar';
 import MessageBubble    from '@/app/components/chat/MessageBubble';
 import FileBubble       from '@/app/components/chat/FileBubble';
 import TypingIndicator  from '@/app/components/chat/TypingIndicator';
@@ -43,6 +42,10 @@ export default function Home() {
   const [meetingActive, setMeetingActive]   = useState(false);
   const [mediaError, setMediaError]         = useState(null);
   const [chatWidth, setChatWidth]           = useState(360);
+  const [lobbyCode, setLobbyCode]           = useState('');
+  const [toasts, setToasts]                 = useState([]);
+  const [peerMeetingActive, setPeerMeetingActive] = useState(false);
+  const [peerWhiteboardActive, setPeerWhiteboardActive] = useState(false);
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef           = useRef(null);
@@ -56,6 +59,7 @@ export default function Home() {
   const handleRelayMessageRef  = useRef(null);
   const sendReactionRef        = useRef(null);
   const whiteboardRef          = useRef(null);
+  const audioContextRef        = useRef(null);
 
   // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) =>
@@ -70,6 +74,36 @@ export default function Home() {
   const updateMsg = useCallback((id, updates) =>
     setMessages((prev) =>
       prev.map((m) => (m.id === id ? { ...m, ...updates } : m))), []);
+
+  const pushToast = useCallback((text, tone = 'info') => {
+    const id = genId();
+    setToasts((prev) => [...prev, { id, text, tone }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((item) => item.id !== id));
+    }, 3200);
+  }, []);
+
+  const playIncomingSound = useCallback(() => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = audioContextRef.current || new Ctx();
+      audioContextRef.current = ctx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } catch {
+      // Ignore browser audio restrictions.
+    }
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -196,6 +230,7 @@ export default function Home() {
     sendDelete,
     sendLinkPreview,
     sendWhiteboardEvent,
+    sendPresenceEvent,
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
@@ -209,14 +244,47 @@ export default function Home() {
     isAudioMuted,
     isVideoOff,
     isScreenSharing,
+    localPresentationStream,
     remoteAudioMuted,
     remoteVideoOff,
+    remoteScreenSharing,
   } = useWebRTC({
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
 
     onMediaError: (err) => setMediaError(err.message),
-    onMeetingStart: () => setMeetingActive(true),
+    onMeetingStart: () => {
+      setMeetingActive(true);
+      pushToast('Meeting is available to join.', 'meeting');
+    },
+
+    onPresence: (message) => {
+      switch (message.type) {
+        case 'whiteboard-open':
+          setPeerWhiteboardActive(true);
+          break;
+        case 'whiteboard-close':
+          setPeerWhiteboardActive(false);
+          break;
+        case 'meeting-open':
+          setPeerMeetingActive(true);
+          break;
+        case 'meeting-close':
+          setPeerMeetingActive(false);
+          break;
+        case 'page-hidden':
+          pushToast('Peer switched tab or minimized the app.', 'navigation');
+          break;
+        case 'page-visible':
+          pushToast('Peer returned to the app.', 'navigation');
+          break;
+        case 'leaving-page':
+          pushToast('Peer is navigating away.', 'navigation');
+          break;
+        default:
+          break;
+      }
+    },
 
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
@@ -314,6 +382,8 @@ export default function Home() {
     onChatMessage: ({ text, id, timestamp, replyTo }) => {
       setPeerTyping(false);
       clearTimeout(typingTimeoutRef.current);
+      pushToast('You have a new message.', 'message');
+      playIncomingSound();
       addMsg({
         id: id || genId(), type: 'text', sender: 'peer',
         text, timestamp: timestamp || Date.now(),
@@ -332,6 +402,8 @@ export default function Home() {
     },
 
     onWhiteboardEvent: (event) => {
+      if (event?.kind === 'wb-open') setPeerWhiteboardActive(true);
+      if (event?.kind === 'wb-close') setPeerWhiteboardActive(false);
       whiteboardRef.current?.handlePeerEvent(event);
     },
 
@@ -365,6 +437,41 @@ export default function Home() {
     decryptChunk: decryptFn,
   });
 
+  useEffect(() => {
+    if (showMeeting) setPeerMeetingActive(false);
+  }, [showMeeting]);
+
+  useEffect(() => {
+    if (showWhiteboard) setPeerWhiteboardActive(false);
+  }, [showWhiteboard]);
+
+  useEffect(() => {
+    const isChatReady = status === 'connected' || status === 'transferring';
+    if (!isChatReady) return;
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        sendPresenceEvent('page-hidden');
+      } else {
+        sendPresenceEvent('page-visible');
+      }
+    };
+
+    const onPageLeave = () => {
+      sendPresenceEvent('leaving-page');
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onPageLeave);
+    window.addEventListener('beforeunload', onPageLeave);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onPageLeave);
+      window.removeEventListener('beforeunload', onPageLeave);
+    };
+  }, [status, sendPresenceEvent]);
+
   // Keep refs in sync
   useEffect(() => { sendReactionRef.current      = sendReaction;      }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
@@ -378,6 +485,7 @@ export default function Home() {
     if (!joinToken) return;
     autoJoinHandled.current = true;
     setMode('receive');
+    setStatus('waiting');
     setupDerivedKey(codeFromUrl || joinToken)
       .then(() => send({ type: 'join', payload: { token: joinToken } }))
       .catch(() => { setStatus('error'); setErrorMsg('Could not initialize secure join.'); });
@@ -386,7 +494,6 @@ export default function Home() {
 
   // ── Room actions ───────────────────────────────────────────────────
   const startSend    = () => { setErrorMsg(''); setMode('send');    send({ type: 'create' }); };
-  const startReceive = () => { setErrorMsg(''); setMode('receive'); setStatus('idle'); };
 
   const joinRoom = async (code) => {
     setErrorMsg('');
@@ -407,6 +514,7 @@ export default function Home() {
   const reset = () => {
     leaveRoom();
     setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
+    setLobbyCode('');
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
     setShowWhiteboard(false); setReplyingTo(null); setQueueVersion(0);
@@ -614,19 +722,42 @@ export default function Home() {
   }, []);
 
   const connectionLabel = connectionType?.type === 'relay'
-    ? 'Secure relay'
+    ? 'Connected via relay'
     : connectionType
-      ? 'Direct peer'
+      ? 'Connected directly'
       : status === 'transferring'
         ? 'Transferring'
-        : 'Connecting';
+        : status === 'connected'
+          ? 'Connected'
+          : status === 'error'
+            ? 'Connection error'
+            : 'Connecting';
+
+  const connectionDotClass =
+    status === 'error'
+      ? 'bg-red-500'
+      : status === 'connected'
+        ? 'bg-emerald-500'
+        : status === 'transferring'
+          ? 'bg-blue-500 animate-pulse'
+          : 'bg-amber-500 animate-pulse';
+
+  const normalizedLobbyCode = lobbyCode.trim().toUpperCase();
+  const canJoinLobbyCode = normalizedLobbyCode.length >= 4;
+
+  const handleLobbyJoin = async () => {
+    if (!canJoinLobbyCode) return;
+    setMode('receive');
+    setStatus('waiting');
+    await joinRoom(normalizedLobbyCode);
+  };
 
   // ────────────────────────────────────────────────────────────────────
   //  Render
   // ────────────────────────────────────────────────────────────────────
   return (
     <main
-      className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.16),transparent_32%),linear-gradient(180deg,#f8fbff_0%,#e8eef8_100%)] dark:bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.18),transparent_30%),linear-gradient(180deg,#020617_0%,#0f172a_100%)]"
+      className="min-h-screen bg-slate-100 dark:bg-slate-950"
       onDragEnter={handleDropEnter}
       onDragLeave={handleDropLeave}
       onDragOver={handleDropOver}
@@ -635,14 +766,62 @@ export default function Home() {
 
       {/* ══════  CHAT VIEW  ══════ */}
       {chatReady && (
-        <div className="relative flex min-h-screen overflow-hidden">
-          <div 
+        <div className="relative flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
+
+          {/* Meeting Panel */}
+          {showMeeting && (
+             <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-950 h-screen overflow-hidden">
+                <MeetingPanel
+                   isHost={mode === 'send'}
+                   meetingActive={meetingActive}
+                   localStream={localStream}
+                   localPresentationStream={localPresentationStream}
+                   remoteStream={remoteStream}
+                   onStartMeeting={async (opts = { audio: true, video: true }) => {
+                      setMeetingActive(true);
+                      await startMeetingStreams(opts);
+                   }}
+                   mediaError={mediaError}
+                   toggleAudio={toggleAudio}
+                   toggleVideo={toggleVideo}
+                   toggleScreenShare={toggleScreenShare}
+                   isAudioMuted={isAudioMuted}
+                   isVideoOff={isVideoOff}
+                   isScreenSharing={isScreenSharing}
+                   remoteAudioMuted={remoteAudioMuted}
+                   remoteVideoOff={remoteVideoOff}
+                   remoteScreenSharing={remoteScreenSharing}
+                   onLeaveMeeting={() => {
+                      stopMeeting();
+                      setShowMeeting(false);
+                      setMeetingActive(false);
+                   }}
+                />
+             </div>
+          )}
+
+          {/* Resizer */}
+          {showMeeting && (
+             <div 
+               className="w-1 cursor-col-resize shrink-0 bg-slate-300/70 hover:bg-blue-500 dark:bg-slate-700/70 dark:hover:bg-blue-500 z-10 transition-colors"
+               onMouseDown={(e) => {
+                 const startX = e.clientX;
+                 const startW = chatWidth;
+                 const onMove = (me) => setChatWidth(Math.max(280, Math.min(startW - (me.clientX - startX), window.innerWidth - 360)));
+                 const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                 window.addEventListener('mousemove', onMove);
+                 window.addEventListener('mouseup', onUp);
+               }}
+             />
+          )}
+
+          <div
             style={{ width: showMeeting ? `${chatWidth}px` : '100%', minWidth: showMeeting ? '300px' : undefined }}
-            className={`flex h-screen flex-col overflow-hidden bg-transparent backdrop-blur-xl transition-all duration-300 ${!showMeeting && 'w-full'}`}
+            className={`flex h-screen flex-col overflow-hidden border-l border-slate-200 bg-white transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${!showMeeting && 'w-full border-l-0'}`}
           >
 
           {/* Header */}
-          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/55 px-4 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/40 sm:px-5 lg:px-6">
+          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5 lg:px-6">
             <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <button
                 onClick={reset}
@@ -653,45 +832,60 @@ export default function Home() {
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
                   <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100 sm:text-base">
-                    {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
+                    Chat
                   </p>
-                  <span className="hidden rounded-full border px-1.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline-flex">
-                    {connectionLabel}
+                  <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
+                    <span className={`h-2.5 w-2.5 rounded-full ${connectionDotClass}`} />
                   </span>
                 </div>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button
-                onClick={() => setShowMeeting(prev => !prev)}
+                onClick={() => {
+                  setShowMeeting((prev) => {
+                    const next = !prev;
+                    sendPresenceEvent(next ? 'meeting-open' : 'meeting-close');
+                    return next;
+                  });
+                }}
                 title={showMeeting ? "Close Meeting" : "Open Meeting"}
-                className={`flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 transition-colors dark:border-slate-700 dark:hover:bg-slate-800 ${showMeeting ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white text-slate-500 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-400'}`}
+                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 transition-colors dark:border-slate-700 dark:hover:bg-slate-800 ${showMeeting ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white text-slate-500 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-400'} ${peerMeetingActive ? 'ring-2 ring-blue-400/70 dark:ring-blue-500/70' : ''}`}
               >
+                {peerMeetingActive && !showMeeting && (
+                  <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-blue-500 animate-pulse" />
+                )}
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
               </button>
               <button
-                onClick={() => setShowWhiteboard(true)}
+                onClick={() => {
+                  setShowWhiteboard(true);
+                  sendWhiteboardEvent({ kind: 'wb-open' });
+                  sendPresenceEvent('whiteboard-open');
+                }}
                 title="Open whiteboard"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
+                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${showWhiteboard ? 'ring-2 ring-emerald-400/70 dark:ring-emerald-500/70' : ''} ${peerWhiteboardActive ? 'ring-2 ring-emerald-400/70 dark:ring-emerald-500/70' : ''}`}
               >
+                {peerWhiteboardActive && !showWhiteboard && (
+                  <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                )}
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M15.232 5.232l3.536 3.536M9 11l6-6 3.536 3.536-6 6H9v-3.536z" />
                 </svg>
               </button>
               <DarkModeToggle />
-              <PeerAvatar connectionType={connectionType} />
             </div>
           </header>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto bg-transparent px-3 py-4 sm:px-4 sm:py-5 lg:px-6">
+          <div className="flex-1 overflow-y-auto bg-slate-50 px-3 py-4 dark:bg-slate-950 sm:px-4 sm:py-5 lg:px-6">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
               {messages.length === 0 && (
-                <div className="mx-auto mt-8 max-w-md rounded-[28px] border border-white/70 bg-white/75 px-6 py-8 text-center shadow-lg shadow-slate-900/5 backdrop-blur dark:border-slate-800 dark:bg-slate-900/75 dark:shadow-black/10">
+                <div className="mx-auto mt-8 max-w-md rounded-[28px] bg-white px-6 py-8 text-center shadow-sm dark:bg-slate-900">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400">
                     <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
@@ -710,7 +904,7 @@ export default function Home() {
                 if (msg.type === 'system') {
                   return (
                     <div key={msg.id} className="flex justify-center py-1">
-                      <span className="rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/75 dark:text-slate-400">
+                      <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                         {msg.text}
                       </span>
                     </div>
@@ -760,7 +954,7 @@ export default function Home() {
 
           {/* Error banner */}
           {errorMsg && (
-            <div className="shrink-0 border-t border-red-200 bg-red-50/95 px-4 py-2 text-center text-xs text-red-700 backdrop-blur dark:border-red-900 dark:bg-red-950/90 dark:text-red-300">
+            <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-center text-xs text-red-700 dark:border-red-900 dark:bg-red-950/90 dark:text-red-300">
               {errorMsg}
               <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
                 Dismiss
@@ -768,8 +962,8 @@ export default function Home() {
             </div>
           )}
 
-          <div className="shrink-0 border-t border-slate-200/80 bg-white/30 px-3 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/25 sm:px-4 lg:px-6">
-            <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+          <div className="shrink-0 px-3 py-2 sm:px-4 lg:px-5">
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
               {/* Send queue */}
               <SendQueue
                 key={queueVersion}
@@ -798,58 +992,17 @@ export default function Home() {
             <Whiteboard
               ref={whiteboardRef}
               onSendEvent={sendWhiteboardEvent}
-              onClose={() => setShowWhiteboard(false)}
+              onClose={() => {
+                setShowWhiteboard(false);
+                sendWhiteboardEvent({ kind: 'wb-close' });
+                sendPresenceEvent('whiteboard-close');
+              }}
             />
           )}
           </div>
 
-          {/* Resizer */}
-          {showMeeting && (
-             <div 
-               className="w-1 cursor-col-resize shrink-0 bg-slate-200/60 hover:bg-blue-400 dark:bg-slate-700/60 dark:hover:bg-blue-500 z-10 transition-colors"
-               onMouseDown={(e) => {
-                 const startX = e.clientX;
-                 const startW = chatWidth;
-                 const onMove = (me) => setChatWidth(Math.max(280, Math.min(startW + me.clientX - startX, window.innerWidth - 360)));
-                 const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-                 window.addEventListener('mousemove', onMove);
-                 window.addEventListener('mouseup', onUp);
-               }}
-             />
-          )}
-
-          {/* Meeting Panel */}
-          {showMeeting && (
-             <div className="flex-1 min-w-0 bg-black h-screen overflow-hidden">
-                <MeetingPanel
-                   isHost={mode === 'send'}
-                   meetingActive={meetingActive}
-                   localStream={localStream}
-                   remoteStream={remoteStream}
-                   onStartMeeting={async (opts = { audio: true, video: true }) => {
-                      setMeetingActive(true);
-                      await startMeetingStreams(opts);
-                   }}
-                   mediaError={mediaError}
-                   toggleAudio={toggleAudio}
-                   toggleVideo={toggleVideo}
-                   toggleScreenShare={toggleScreenShare}
-                   isAudioMuted={isAudioMuted}
-                   isVideoOff={isVideoOff}
-                   isScreenSharing={isScreenSharing}
-                   remoteAudioMuted={remoteAudioMuted}
-                   remoteVideoOff={remoteVideoOff}
-                   onLeaveMeeting={() => {
-                      stopMeeting();
-                      setShowMeeting(false);
-                      setMeetingActive(false);
-                   }}
-                />
-             </div>
-          )}
-
           {dragDepth > 0 && (
-            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 p-5 backdrop-blur-[2px] dark:bg-slate-950/30">
+            <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/10 p-5 backdrop-blur-[2px] dark:bg-slate-950/30">
               <div className="pointer-events-auto w-full max-w-2xl">
                 <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
               </div>
@@ -860,16 +1013,16 @@ export default function Home() {
 
       {/* ══════  LOBBY VIEW  ══════ */}
       {!chatReady && (
-        <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 relative">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
+        <div className="relative flex flex-1 items-center justify-center px-4 py-10">
+          <div className="w-full max-w-6xl rounded-3xl bg-white/90 p-6 shadow-xl shadow-slate-900/5 backdrop-blur dark:bg-slate-900/75 lg:p-8">
 
-            <div className="flex justify-between items-center mb-6">
+            <div className="mb-8 flex items-center justify-between">
               {mode ? (
                 <button
                   onClick={reset}
-                  className="group flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
+                  className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
                 >
-                  <svg className="h-4 w-4 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                   </svg>
                   Back
@@ -878,70 +1031,94 @@ export default function Home() {
               <DarkModeToggle />
             </div>
 
-            <header className="mb-8 text-center">
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
-                FileShare &amp; Chat
-              </h1>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                WebRTC · End-to-end encrypted · No cloud storage
-              </p>
-            </header>
+            {mode !== 'send' ? (
+              <div className="grid gap-8 lg:grid-cols-[0.9fr_1.3fr] lg:items-center">
+                <section>
+                  <h1 className="max-w-xl text-4xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-5xl">
+                    Meet, chat, and share files instantly.
+                  </h1>
 
-            {!mode && (
-              <div className="flex flex-col gap-4">
-                <button
-                  onClick={startSend}
-                  className="group relative flex w-full items-center justify-between rounded-2xl bg-linear-to-r from-blue-600 to-indigo-600 px-6 py-5 shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl active:scale-95"
-                >
-                  <div className="flex flex-col items-start gap-1">
-                    <span className="text-xl font-bold text-white">Create Room</span>
-                    <span className="text-sm text-blue-100">Start sharing and chatting</span>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition-transform group-hover:rotate-12">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                  </div>
-                </button>
-                
-                <div className="relative flex items-center justify-center py-2">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700"></div></div>
-                  <span className="relative bg-white dark:bg-slate-900 px-4 text-xs font-medium text-slate-400">OR</span>
-                </div>
+                  <p className="mt-4 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-300">
+                    Join with a room code or start a new meeting, similar to Google Meet web flow.
+                  </p>
+                </section>
 
-                <button
-                  onClick={startReceive}
-                  className="group relative flex w-full items-center justify-between rounded-2xl border-2 border-slate-200 bg-white px-6 py-5 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600 dark:hover:bg-slate-700"
-                >
-                  <div className="flex flex-col items-start gap-1">
-                    <span className="text-xl font-bold text-slate-800 dark:text-white">Join Room</span>
-                    <span className="text-sm text-slate-500 dark:text-slate-400">Enter a code to connect</span>
+                <section className="rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-900 sm:p-7">
+                  <p className="text-base font-semibold text-slate-800 dark:text-slate-200">
+                    Start or join with a code
+                  </p>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                    <button
+                      onClick={startSend}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      New meeting
+                    </button>
+
+                    <div className="relative flex-1">
+                      <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
+                      </svg>
+                      <input
+                        type="text"
+                        value={lobbyCode}
+                        onChange={(e) => setLobbyCode(e.target.value.toUpperCase())}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLobbyJoin()}
+                        placeholder="Enter a code"
+                        maxLength={12}
+                        className="w-full rounded-full border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm font-medium tracking-wide text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleLobbyJoin}
+                      disabled={!canJoinLobbyCode}
+                      className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      Join
+                    </button>
                   </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-transform group-hover:translate-x-1 dark:bg-slate-700 dark:text-slate-300">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </div>
-                </button>
+
+                  {mode === 'receive' && status !== 'idle' && (
+                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                        Connecting to room {normalizedLobbyCode || sessionCode || '...'}
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+                    Tip: Use the room code shared by your teammate. Codes are case-insensitive.
+                  </p>
+                </section>
+              </div>
+            ) : (
+              <div className="mx-auto w-full max-w-md">
+                <header className="mb-7 text-center">
+                  <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                    FileShare &amp; Chat
+                  </h1>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Share this code to invite others
+                  </p>
+                </header>
+                <SessionCode mode="send" code={sessionCode} token={roomToken} />
               </div>
             )}
 
-            {mode === 'receive' && status === 'idle' && (
-              <SessionCode mode="receive" onJoin={joinRoom} />
-            )}
-
-            {mode === 'send' && (
-              <SessionCode mode="send" code={sessionCode} token={roomToken} />
-            )}
-
             {errorMsg && (
-              <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 px-4 py-3 text-center text-sm text-red-700 dark:text-red-300">
+              <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
                 {errorMsg}
               </div>
             )}
 
             <footer className="mt-8 text-center text-xs text-slate-400">
-              Transfers are device-to-device via WebRTC. Falls back to encrypted server relay when needed.
+              Fast file sharing and chat in one room.
             </footer>
           </div>
         </div>
@@ -970,6 +1147,26 @@ export default function Home() {
           />
         </div>
       )}
+
+      {/* ══════  TOASTS  ══════ */}
+      <div className="pointer-events-none fixed right-4 top-4 z-[60] flex w-[min(92vw,360px)] flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-slate-900/10 backdrop-blur ${
+              toast.tone === 'message'
+                ? 'border-blue-200 bg-blue-50/95 text-blue-900 dark:border-blue-800 dark:bg-blue-950/95 dark:text-blue-100'
+                : toast.tone === 'navigation'
+                  ? 'border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-800 dark:bg-amber-950/95 dark:text-amber-100'
+                  : toast.tone === 'meeting'
+                    ? 'border-emerald-200 bg-emerald-50/95 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/95 dark:text-emerald-100'
+                    : 'border-slate-200/90 bg-white/95 text-slate-700 dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200'
+            }`}
+          >
+            {toast.text}
+          </div>
+        ))}
+      </div>
 
     </main>
   );

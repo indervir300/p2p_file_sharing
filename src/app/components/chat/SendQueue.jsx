@@ -75,7 +75,7 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
   if (!queue.length) return null;
 
   return (
-    <div className="rounded-2xl border border-slate-200/90 bg-white/82 px-3 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
+    <div className="rounded-2xl bg-transparent px-1 py-1">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
         Send Queue — drag to reorder
       </p>
