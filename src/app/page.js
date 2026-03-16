@@ -14,6 +14,7 @@ import TypingIndicator  from '@/app/components/chat/TypingIndicator';
 import ChatInput        from '@/app/components/chat/ChatInput';
 import SendQueue        from '@/app/components/chat/SendQueue';
 import Whiteboard       from '@/app/components/whiteboard/Whiteboard';
+import MeetingPanel     from '@/app/components/meeting/MeetingPanel';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -38,6 +39,10 @@ export default function Home() {
   const [replyingTo, setReplyingTo]         = useState(null);
   const [queueVersion, setQueueVersion]     = useState(0);
   const [dragDepth, setDragDepth]           = useState(0);
+  const [showMeeting, setShowMeeting]       = useState(false);
+  const [meetingActive, setMeetingActive]   = useState(false);
+  const [mediaError, setMediaError]         = useState(null);
+  const [chatWidth, setChatWidth]           = useState(360);
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef           = useRef(null);
@@ -194,9 +199,24 @@ export default function Home() {
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
+    startMeetingStreams,
+    stopMeeting,
+    toggleAudio,
+    toggleVideo,
+    toggleScreenShare,
+    localStream,
+    remoteStream,
+    isAudioMuted,
+    isVideoOff,
+    isScreenSharing,
+    remoteAudioMuted,
+    remoteVideoOff,
   } = useWebRTC({
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
+
+    onMediaError: (err) => setMediaError(err.message),
+    onMeetingStart: () => setMeetingActive(true),
 
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
@@ -615,8 +635,11 @@ export default function Home() {
 
       {/* ══════  CHAT VIEW  ══════ */}
       {chatReady && (
-        <div className="relative flex min-h-screen">
-          <div className="flex h-screen w-full flex-col overflow-hidden bg-transparent backdrop-blur-xl">
+        <div className="relative flex min-h-screen overflow-hidden">
+          <div 
+            style={{ width: showMeeting ? `${chatWidth}px` : '100%', minWidth: showMeeting ? '300px' : undefined }}
+            className={`flex h-screen flex-col overflow-hidden bg-transparent backdrop-blur-xl transition-all duration-300 ${!showMeeting && 'w-full'}`}
+          >
 
           {/* Header */}
           <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/55 px-4 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/40 sm:px-5 lg:px-6">
@@ -642,6 +665,16 @@ export default function Home() {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => setShowMeeting(prev => !prev)}
+                title={showMeeting ? "Close Meeting" : "Open Meeting"}
+                className={`flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 transition-colors dark:border-slate-700 dark:hover:bg-slate-800 ${showMeeting ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white text-slate-500 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-400'}`}
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
               <button
                 onClick={() => setShowWhiteboard(true)}
                 title="Open whiteboard"
@@ -772,6 +805,51 @@ export default function Home() {
             />
           )}
           </div>
+
+          {/* Resizer */}
+          {showMeeting && (
+             <div 
+               className="w-1 cursor-col-resize shrink-0 bg-slate-200/60 hover:bg-blue-400 dark:bg-slate-700/60 dark:hover:bg-blue-500 z-10 transition-colors"
+               onMouseDown={(e) => {
+                 const startX = e.clientX;
+                 const startW = chatWidth;
+                 const onMove = (me) => setChatWidth(Math.max(280, Math.min(startW + me.clientX - startX, window.innerWidth - 360)));
+                 const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                 window.addEventListener('mousemove', onMove);
+                 window.addEventListener('mouseup', onUp);
+               }}
+             />
+          )}
+
+          {/* Meeting Panel */}
+          {showMeeting && (
+             <div className="flex-1 min-w-0 bg-black h-screen overflow-hidden">
+                <MeetingPanel
+                   isHost={mode === 'send'}
+                   meetingActive={meetingActive}
+                   localStream={localStream}
+                   remoteStream={remoteStream}
+                   onStartMeeting={async (opts = { audio: true, video: true }) => {
+                      setMeetingActive(true);
+                      await startMeetingStreams(opts);
+                   }}
+                   mediaError={mediaError}
+                   toggleAudio={toggleAudio}
+                   toggleVideo={toggleVideo}
+                   toggleScreenShare={toggleScreenShare}
+                   isAudioMuted={isAudioMuted}
+                   isVideoOff={isVideoOff}
+                   isScreenSharing={isScreenSharing}
+                   remoteAudioMuted={remoteAudioMuted}
+                   remoteVideoOff={remoteVideoOff}
+                   onLeaveMeeting={() => {
+                      stopMeeting();
+                      setShowMeeting(false);
+                      setMeetingActive(false);
+                   }}
+                />
+             </div>
+          )}
 
           {dragDepth > 0 && (
             <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 p-5 backdrop-blur-[2px] dark:bg-slate-950/30">

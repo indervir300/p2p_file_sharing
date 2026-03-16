@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 
 const CHUNK_SIZE = 64 * 1024;
 
@@ -33,6 +33,8 @@ export function useWebRTC({
   onMessageDelete,
   onLinkPreview,
   onStateChange,
+  onMediaError,
+  onMeetingStart,
   encryptChunk,
   decryptChunk,
   wsSend,
@@ -46,6 +48,21 @@ export function useWebRTC({
   const sendingRef        = useRef(false);
   const pendingCandidates = useRef([]);
   const isRelayMode       = useRef(false);
+
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [remoteAudioMuted, setRemoteAudioMuted] = useState(false);
+  const [remoteVideoOff, setRemoteVideoOff] = useState(false);
+  const screenStreamRef  = useRef(null);
+  const screenSenderRef  = useRef(null); // sender being used during an active screen share
+  const localStreamRef   = useRef(null); // always-current mirror of localStream state
+
+  // Keep localStreamRef in sync with state so callbacks can read it without
+  // capturing a stale closure value.
+  useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
 
   // ── Resumable transfer refs ────────────────────────────────────────
   const pendingTransferRef = useRef(null); // sender side
@@ -259,6 +276,14 @@ export function useWebRTC({
 
     if (kind?.startsWith('wb-')) { onWhiteboardEvent?.(message); return; }
     if (kind === 'typing')       { onTyping?.(); return; }
+    if (kind === 'meeting-start'){ onMeetingStart?.(); return; }
+    if (kind === 'media-state') {
+      if (message.audioMuted !== undefined) setRemoteAudioMuted(message.audioMuted);
+      // Apply videoOff first, then let screenSharing=true override it
+      if (message.videoOff !== undefined) setRemoteVideoOff(message.videoOff);
+      if (message.screenSharing === true) setRemoteVideoOff(false);
+      return;
+    }
 
     if (kind === 'reaction') {
       onReaction?.({ msgId: message.msgId, emoji: message.emoji, fromPeer: true });
@@ -449,6 +474,20 @@ export function useWebRTC({
   const createPeerConnection = useCallback(() => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
+    // Use ref so we always read the current stream even if called from a stale closure
+    const currentStream = localStreamRef.current;
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => {
+        pc.addTrack(track, currentStream);
+      });
+    }
+
+    pc.ontrack = (event) => {
+       if (event.streams && event.streams[0]) {
+          setRemoteStream(event.streams[0]);
+       }
+    };
+
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) onSignal({ type: 'ice-candidate', payload: candidate });
     };
@@ -493,6 +532,8 @@ export function useWebRTC({
 
     pcRef.current = pc;
     return pc;
+  // Removed `localStream` from deps — we use localStreamRef.current instead
+  // to avoid a stale closure (the PC is created before the meeting starts).
   }, [onSignal, onStateChange, onConnected, onTransferPaused, wsSend]);
 
   const createOffer = useCallback(async () => {
@@ -506,11 +547,22 @@ export function useWebRTC({
   }, [createPeerConnection, setupDataChannel, onSignal]);
 
   const handleOffer = useCallback(async (offer) => {
-    const pc = createPeerConnection();
-    pc.ondatachannel = ({ channel }) => {
-      dcRef.current = channel;
-      setupDataChannel(channel);
-    };
+    // If we already have a live peer connection (e.g. host renegotiating for
+    // screen-share), reuse it — do NOT destroy it with createPeerConnection().
+    const existingPc = pcRef.current;
+    const isRenegotiation = existingPc &&
+      existingPc.signalingState !== 'closed' &&
+      existingPc.connectionState !== 'failed';
+
+    const pc = isRenegotiation ? existingPc : createPeerConnection();
+
+    if (!isRenegotiation) {
+      pc.ondatachannel = ({ channel }) => {
+        dcRef.current = channel;
+        setupDataChannel(channel);
+      };
+    }
+
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     while (pendingCandidates.current.length > 0)
       await pc.addIceCandidate(
@@ -539,6 +591,242 @@ export function useWebRTC({
       pendingCandidates.current.push(candidate);
     }
   }, []);
+
+  // ── Meeting Streams ────────────────────────────────────────────────
+
+
+  const broadcastMediaState = useCallback((state) => {
+    const payload = { kind: 'media-state', ...state };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); }
+    else if (dcRef.current?.readyState === 'open') { dcRef.current.send(JSON.stringify(payload)); }
+  }, [wsSend]);
+
+  const startMeetingStreams = useCallback(async (opts = { audio: true, video: true }) => {
+    let stream = null;
+    let fallbackError = null;
+
+    if (opts.audio || opts.video) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        fallbackError = new Error('Browser media API not supported. Please ensure you are using HTTPS or localhost.');
+      } else {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(opts);
+        } catch (err) {
+          // Graceful fallback if video fails but audio might work, or vice versa
+          console.warn("Requested media combination failed, attempting fallback:", err);
+          if (opts.audio && opts.video) {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch (err2) {
+              try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+              } catch (err3) {
+                fallbackError = err;
+              }
+            }
+          } else {
+            fallbackError = err;
+          }
+        }
+      }
+
+      if (stream) {
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+
+        // Map initial disabled states if changed during fallback
+        if (!stream.getAudioTracks().length) setIsAudioMuted(true);
+        if (!stream.getVideoTracks().length) setIsVideoOff(true);
+      } else if (fallbackError) {
+         if (onMediaError) onMediaError(fallbackError);
+         setIsAudioMuted(true);
+         setIsVideoOff(true);
+      }
+    }
+
+    try {
+      // If we already have a connection, renegotiate
+      if (pcRef.current && pcRef.current.signalingState !== 'closed') {
+        if (stream) {
+          stream.getTracks().forEach(track => {
+             pcRef.current.addTrack(track, stream);
+          });
+        }
+        
+        // Also ensure receivers are added if a user joins purely to watch without media
+        if (!stream) {
+           pcRef.current.addTransceiver('video', { direction: 'recvonly' });
+           pcRef.current.addTransceiver('audio', { direction: 'recvonly' });
+        }
+
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
+        onSignal({ type: 'offer', payload: offer });
+        
+        // Notify other peer that the meeting officially started
+        const startPayload = { kind: 'meeting-start' };
+        if (isRelayMode.current) { wsSend?.({ type: 'relay', payload: startPayload }); }
+        else if (dcRef.current?.readyState === 'open') { dcRef.current.send(JSON.stringify(startPayload)); }
+
+        // Also broadcast initial state if muted/camera off
+        if (stream) {
+           const initialAudioMuted = !stream.getAudioTracks().length;
+           const initialVideoOff = !stream.getVideoTracks().length;
+           broadcastMediaState({ audioMuted: initialAudioMuted, videoOff: initialVideoOff });
+        } else {
+           broadcastMediaState({ audioMuted: true, videoOff: true });
+        }
+        
+      }
+    } catch (err) {
+      console.warn("Negotiation failed after starting meeting:", err);
+    }
+  }, [onSignal, onMediaError, broadcastMediaState, wsSend]);
+
+  const toggleAudio = useCallback(() => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsAudioMuted(!audioTrack.enabled);
+      }
+    }
+  }, [localStream]);
+
+  const toggleVideo = useCallback(() => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsVideoOff(!videoTrack.enabled);
+      }
+    }
+  }, [localStream]);
+
+  const stopMeeting = useCallback(() => {
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+      setLocalStream(null);
+    }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+    }
+    screenSenderRef.current = null;
+    if (remoteStream) {
+      setRemoteStream(null);
+    }
+    if (pcRef.current) {
+      pcRef.current.getSenders().forEach(sender => {
+         if (sender.track) {
+             sender.track.stop();
+             pcRef.current.removeTrack(sender);
+         }
+      });
+    }
+    setIsAudioMuted(false);
+    setIsVideoOff(false);
+    setIsScreenSharing(false);
+    
+    // Explicitly notify remote that we stopped
+    const payload = { kind: 'media-state', meetingStopped: true };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); }
+    else if (dcRef.current?.readyState === 'open') { dcRef.current.send(JSON.stringify(payload)); }
+    
+  }, [localStream, remoteStream, wsSend]);
+
+  const toggleScreenShare = useCallback(async () => {
+    if (!pcRef.current) return;
+    try {
+      if (isScreenSharing && screenStreamRef.current) {
+        // ── Stop screen sharing ──────────────────────────────────────
+        const screenTrack = screenStreamRef.current.getVideoTracks()[0];
+        if (screenTrack) screenTrack.stop();
+        screenStreamRef.current = null;
+
+        const sender = screenSenderRef.current;
+        screenSenderRef.current = null;
+
+        if (sender) {
+          const videoTrack = localStream?.getVideoTracks()[0];
+          if (videoTrack?.enabled) {
+            // Revert the sender back to the camera track
+            await sender.replaceTrack(videoTrack);
+          } else {
+            // No camera to revert to — remove the sender and renegotiate
+            pcRef.current.removeTrack(sender);
+            const offer = await pcRef.current.createOffer();
+            await pcRef.current.setLocalDescription(offer);
+            onSignal({ type: 'offer', payload: offer });
+          }
+        }
+
+        // Tell remote: video is off when no camera or camera is currently disabled
+        const camTrack = localStream?.getVideoTracks()[0];
+        setIsScreenSharing(false);
+        broadcastMediaState({ screenSharing: false, videoOff: !(camTrack?.enabled) });
+      } else {
+        // ── Start screen sharing ─────────────────────────────────────
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        screenStreamRef.current = screenStream;
+        const screenTrack = screenStream.getVideoTracks()[0];
+
+        // Find an existing video sender (camera may be on or off)
+        let sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
+
+        if (sender) {
+          // Swap the camera track for the screen track (no renegotiation needed)
+          await sender.replaceTrack(screenTrack);
+        } else {
+          // No video sender exists (user joined without camera) — add track and renegotiate
+          sender = pcRef.current.addTrack(screenTrack, screenStream);
+          const offer = await pcRef.current.createOffer();
+          await pcRef.current.setLocalDescription(offer);
+          onSignal({ type: 'offer', payload: offer });
+        }
+
+        screenSenderRef.current = sender;
+
+        // When the user stops sharing via the browser's native stop button
+        screenTrack.onended = async () => {
+          const videoTrack = localStream?.getVideoTracks()[0];
+          const currentSender = screenSenderRef.current;
+          screenStreamRef.current = null;
+          screenSenderRef.current = null;
+
+          if (currentSender && pcRef.current) {
+            if (videoTrack?.enabled) {
+              await currentSender.replaceTrack(videoTrack);
+            } else {
+              pcRef.current.removeTrack(currentSender);
+              if (pcRef.current.signalingState !== 'closed') {
+                const offer = await pcRef.current.createOffer();
+                await pcRef.current.setLocalDescription(offer);
+                onSignal({ type: 'offer', payload: offer });
+              }
+            }
+          }
+
+           // Tell remote: video is off when no camera or camera is currently disabled
+           const camOff = !(videoTrack?.enabled);
+           setIsScreenSharing(false);
+           broadcastMediaState({ screenSharing: false, videoOff: camOff });
+        };
+
+        setIsScreenSharing(true);
+        // Clear the remote's "Camera Off" overlay — screen video is now active
+        broadcastMediaState({ screenSharing: true, videoOff: false });
+      }
+    } catch (err) {
+      // Clean up if getDisplayMedia was granted but setup failed
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(t => t.stop());
+        screenStreamRef.current = null;
+      }
+      screenSenderRef.current = null;
+      console.warn('Screen share error:', err);
+    }
+  }, [isScreenSharing, localStream, onSignal, broadcastMediaState]);
 
   // ── Typing ─────────────────────────────────────────────────────────
   const sendTyping = useCallback(() => {
@@ -706,6 +994,7 @@ export function useWebRTC({
     pendingTransferRef.current = null;
     recvTransferRef.current    = null;
     chunksSinceAck.current     = 0;
+    screenSenderRef.current    = null;
   }, []);
 
   return {
@@ -725,5 +1014,17 @@ export function useWebRTC({
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
+    startMeetingStreams,
+    stopMeeting,
+    toggleAudio,
+    toggleVideo,
+    toggleScreenShare,
+    localStream,
+    remoteStream,
+    isAudioMuted,
+    isVideoOff,
+    isScreenSharing,
+    remoteAudioMuted,
+    remoteVideoOff,
   };
 }
