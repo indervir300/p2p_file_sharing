@@ -655,13 +655,10 @@ export default function Home() {
                   <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100 sm:text-base">
                     {sessionCode ? `Room ${sessionCode}` : 'Chat Session'}
                   </p>
-                  <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline-flex">
+                  <span className="hidden rounded-full border px-1.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 sm:inline-flex">
                     {connectionLabel}
                   </span>
                 </div>
-                <p className="mt-0.5 hidden text-xs text-slate-500 dark:text-slate-400 sm:block">
-                  Focused chat, file drops, and whiteboard in one workspace.
-                </p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
