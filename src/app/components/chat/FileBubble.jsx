@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import FilePreviewModal, { canPreview } from './FilePreviewModal';
 import AudioVisualizer from './AudioVisualizer';
 
@@ -12,7 +12,42 @@ function formatSize(bytes) {
 
 export default function FileBubble({ msg, isMine, onDownload, onPreview, onCancel, onDelete }) {
   const [showPreview, setShowPreview] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const containerRef = useRef(null);
+  const longPressTimer = useRef(null);
+
   const { mimeType = '', previewUrl, name, size, status = 'queued', progress = 0 } = msg;
+
+  const onTouchStart = useCallback(() => {
+    longPressTimer.current = setTimeout(() => {
+      setShowOptions(true);
+      if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+        window.navigator.vibrate(50);
+      }
+    }, 600);
+  }, []);
+  const onTouchEnd = useCallback(() => clearTimeout(longPressTimer.current), []);
+
+  useEffect(() => {
+    if (!showOptions) return;
+    const hide = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowOptions(false);
+      }
+    };
+    document.addEventListener('touchstart', hide);
+    document.addEventListener('mousedown', hide);
+    return () => {
+      document.removeEventListener('touchstart', hide);
+      document.removeEventListener('mousedown', hide);
+    };
+  }, [showOptions]);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    };
+  }, []);
 
   const isImg  = mimeType.startsWith('image/');
   const isVid  = mimeType.startsWith('video/');
@@ -44,7 +79,13 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
   return (
     <>
-      <div className={`relative group/bubble w-[16rem] sm:w-[18rem] max-w-[85vw] overflow-hidden rounded-[28px] shadow-md transition-all duration-300 hover:shadow-lg ${bubble}`}>
+      <div 
+        ref={containerRef}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchMove={onTouchEnd}
+        className={`relative group/bubble w-[16rem] sm:w-[18rem] max-w-[85vw] overflow-hidden rounded-[28px] shadow-md transition-all duration-300 hover:shadow-lg ${bubble}`}
+      >
         
         {/* ── Progress Overlay (for media being transferred) ────────── */}
         {(isBusy || status === 'paused') && isMedia && (
@@ -88,13 +129,15 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
           {isMedia && (
             <>
               {/* Top Overlay: Name & Size */}
-              <div className="absolute top-0 inset-x-0 p-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent lg:opacity-0 lg:group-hover/bubble:opacity-100 transition-all duration-300 lg:-translate-y-2 lg:group-hover/bubble:translate-y-0">
+              <div className={`absolute top-0 inset-x-0 p-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-all duration-300
+                ${showOptions ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 group-hover/bubble:opacity-100 group-hover/bubble:translate-y-0'}`}>
                 <p className="truncate text-xs font-bold text-white drop-shadow-sm">{name}</p>
                 <p className="text-[10px] text-white/70 font-medium uppercase tracking-wider">{formatSize(size)}</p>
               </div>
 
               {/* Bottom Actions & Status Overlay */}
-              <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent lg:opacity-0 lg:group-hover/bubble:opacity-100 transition-all duration-300 lg:translate-y-2 lg:group-hover/bubble:translate-y-0 flex items-center justify-between">
+              <div className={`absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent transition-all duration-300 flex items-center justify-between
+                ${showOptions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 group-hover/bubble:opacity-100 group-hover/bubble:translate-y-0'}`}>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-white/90 uppercase tracking-widest">
                     {status === 'read' || status === 'delivered' ? status : (isMine ? status : '')}

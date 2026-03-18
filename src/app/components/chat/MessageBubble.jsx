@@ -4,16 +4,39 @@ import ReactionPicker from './ReactionPicker';
 import LinkPreview    from './LinkPreview';
 
 export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, onDelete }) {
-  const [showPicker, setShowPicker] = useState(false);
-  const [isEditing,  setIsEditing]  = useState(false);
-  const [editText,   setEditText]   = useState('');
+  const [showPicker,  setShowPicker]  = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [isEditing,   setIsEditing]   = useState(false);
+  const [editText,    setEditText]    = useState('');
   const longPressTimer = useRef(null);
   const editRef        = useRef(null);
+  const containerRef   = useRef(null);
 
   const onTouchStart = useCallback(() => {
-    longPressTimer.current = setTimeout(() => setShowPicker(true), 600);
+    longPressTimer.current = setTimeout(() => {
+      setShowOptions(true);
+      if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+        window.navigator.vibrate(50);
+      }
+    }, 600);
   }, []);
   const onTouchEnd = useCallback(() => clearTimeout(longPressTimer.current), []);
+
+  // Closes options when tapping outside
+  useEffect(() => {
+    if (!showOptions) return;
+    const hide = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowOptions(false);
+      }
+    };
+    document.addEventListener('touchstart', hide);
+    document.addEventListener('mousedown', hide);
+    return () => {
+      document.removeEventListener('touchstart', hide);
+      document.removeEventListener('mousedown', hide);
+    };
+  }, [showOptions]);
 
   // Cleanup long press timer on unmount
   useEffect(() => {
@@ -53,7 +76,7 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
   }
 
   return (
-    <div className="relative group">
+    <div className="relative group" ref={containerRef}>
 
       {/* ── Reply quote ─────────────────────────────────────────────── */}
       {msg.replyTo && (
@@ -172,8 +195,9 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
       {/* ── Hover action buttons ─────────────────────────────────────── */}
       {!isEditing && (
-        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-border-secondary bg-bg-primary/95 px-1.5 py-1 shadow-lg shadow-bg-tertiary/8 lg:opacity-0 transition-all lg:group-hover:opacity-100 dark:border-border-primary dark:bg-bg-secondary/95 dark:shadow-bg-tertiary/40
-          ${isMine ? 'left-2 lg:group-hover:-translate-y-1' : 'right-2 lg:group-hover:-translate-y-1'}`}
+        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-border-secondary bg-bg-primary/95 px-1.5 py-1 shadow-lg shadow-bg-tertiary/8 transition-all dark:border-border-primary dark:bg-bg-secondary/95 dark:shadow-bg-tertiary/40
+          ${showOptions ? 'opacity-100 z-20 -translate-y-1' : 'opacity-0 group-hover:opacity-100'}
+          ${isMine ? (showOptions ? 'left-2' : 'left-2 group-hover:-translate-y-1') : (showOptions ? 'right-2' : 'right-2 group-hover:-translate-y-1')}`}
         >
           {/* Reply */}
           <button onClick={() => onReply?.(msg)} title="Reply"
