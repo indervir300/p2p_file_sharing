@@ -312,6 +312,8 @@ export default function Home() {
         }
         break;
       case 'peer-joined':
+        setPendingInvite(null); // Clear pending invite as it's accepted
+        if (msg.payload?.nickname) setPeerNickname(msg.payload.nickname);
         createOffer();
         break;
       case 'offer':
@@ -1388,7 +1390,7 @@ export default function Home() {
                 <DarkModeToggle />
               </div>
 
-              {mode !== 'send' ? (
+              {!mode ? (
                 <div className="flex flex-col w-full flex-1">
                   <section className="flex flex-col items-center justify-center flex-1">
                     <div className="flex flex-col items-center gap-3">
@@ -1434,6 +1436,7 @@ export default function Home() {
                       nickname={nickname}
                       onConnect={(peer) => {
                         if (pendingInvite) return;
+                        setMode('send');
                         pushToast(`Inviting ${peer.nickname}...`, 'session');
                         setPendingInvite({ toNick: peer.nickname, toId: peer.id });
                         pendingInvitePeerRef.current = peer;
@@ -1447,16 +1450,26 @@ export default function Home() {
                 <div className="mx-auto w-full max-w-md text-center">
                   <div className="mb-8 flex flex-col items-center">
                     <div className="relative mb-6">
-                      <div className="h-20 w-20 rounded-full border-4 border-brand-primary/20 border-t-brand-primary animate-spin" />
+                      <div className="h-24 w-24 rounded-full border-4 border-brand-primary/20 border-t-brand-primary animate-spin" />
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="h-10 w-10 rounded-full bg-brand-primary animate-pulse" />
+                        <div className={`flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white shadow-md ${getAvatarColor(pendingInvite?.toNick || peerNickname)}`}>
+                          {(pendingInvite?.toNick || peerNickname || '?').charAt(0).toUpperCase()}
+                        </div>
                       </div>
                     </div>
                     <h1 className="text-2xl font-bold text-text-primary dark:text-text-primary">
-                      {pendingInvite ? `Waiting for ${pendingInvite.toNick}...` : 'Establishing Connection'}
+                      {pendingInvite 
+                        ? `Waiting for ${pendingInvite.toNick}...` 
+                        : (rtcState === 'connecting' || rtcState === 'checking' || status === 'waiting')
+                          ? `Connecting to ${peerNickname || 'peer'}...`
+                          : 'Establishing Connection'}
                     </h1>
                     <p className="mt-3 text-base text-text-secondary dark:text-text-secondary">
-                      {pendingInvite ? 'Waiting for peer to accept the connection.' : 'Waiting for peer to join the secure session...'}
+                      {pendingInvite 
+                        ? 'Waiting for peer to accept the connection.' 
+                        : (rtcState === 'connecting' || rtcState === 'checking' || (status === 'waiting' && mode === 'receive'))
+                          ? 'Setting up secure P2P connection...'
+                          : 'Waiting for peer to join the secure session...'}
                     </p>
                   </div>
 
@@ -1531,22 +1544,27 @@ export default function Home() {
       {/* Incoming Invite Overlay (Fixed to Viewport) */}
       {incomingInvite && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-sm rounded-2xl border border-border-secondary bg-bg-secondary p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-center">
-              <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-brand-primary/10">
-                <span className="absolute h-full w-full animate-ping rounded-full bg-brand-primary/20" />
-                <svg className="h-8 w-8 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
+          <div className="w-full max-w-sm rounded-3xl border border-border-secondary bg-bg-secondary p-8 shadow-2xl dark:border-border-primary dark:bg-bg-secondary">
+            <div className="mb-6 flex flex-col items-center">
+              <div className="relative mb-4">
+                <div className={`flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-white shadow-lg ${getAvatarColor(incomingInvite.fromNick)}`}>
+                  {(incomingInvite.fromNick || '?').charAt(0).toUpperCase()}
+                </div>
+                <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-brand-primary text-white shadow-sm ring-4 ring-bg-secondary">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                </span>
+                <span className="absolute inset-0 h-full w-full animate-ping rounded-full bg-brand-primary/20" />
               </div>
+              <h3 className="text-xl font-bold text-text-primary dark:text-text-primary">
+                Incoming Invite
+              </h3>
+              <p className="mt-2 text-center text-sm text-text-secondary dark:text-text-secondary/80">
+                <span className="font-bold text-text-primary dark:text-text-primary">{incomingInvite.fromNick}</span> wants to start a secure session with you.
+              </p>
             </div>
-            <h3 className="text-center text-xl font-bold text-text-primary mb-2">
-              Incoming Connection
-            </h3>
-            <p className="text-center text-sm text-text-secondary mb-6">
-              <strong className="text-text-primary">{incomingInvite.fromNick}</strong> wants to connect with you.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => {
                   send({ type: 'invite-reject', payload: { targetId: incomingInvite.fromId } });
@@ -1559,6 +1577,8 @@ export default function Home() {
               <button
                 onClick={() => {
                   setMode('receive');
+                  setPeerNickname(incomingInvite.fromNick);
+                  setStatus('waiting');
                   joinRoom(incomingInvite.roomCode);
                   setIncomingInvite(null);
                 }}
