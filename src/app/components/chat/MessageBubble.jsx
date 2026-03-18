@@ -127,6 +127,37 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
           {msg.linkPreview && (
             <LinkPreview preview={msg.linkPreview} isMine={isMine} />
           )}
+
+          {/* Ticks for outgoing messages */}
+          {isMine && !msg.deleted && (
+            <div className="absolute bottom-1 right-2 flex items-center h-4 select-none">
+              {msg.status === 'sent' && (
+                <svg className="h-3 w-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+              {msg.status === 'delivered' && (
+                <div className="flex -space-x-1.5">
+                  <svg className="h-3 w-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <svg className="h-3 w-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              )}
+              {msg.status === 'read' && (
+                <div className="flex -space-x-1.5">
+                  <svg className="h-3 w-3 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <svg className="h-3 w-3 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

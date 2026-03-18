@@ -20,6 +20,16 @@ function genId() {
 }
 
 const URL_REGEX = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
+const AVATAR_COLORS = [
+  'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500',
+  'bg-pink-500', 'bg-indigo-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500'
+];
+function getAvatarColor(name) {
+  if (!name) return 'bg-bg-tertiary';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
 
 export default function Home() {
 
@@ -40,6 +50,7 @@ export default function Home() {
   const [dragDepth, setDragDepth]           = useState(0);
   const [toasts, setToasts]                 = useState([]);
   const [peerWhiteboardActive, setPeerWhiteboardActive] = useState(false);
+  const [peerNickname, setPeerNickname] = useState('');
   
   // ── Discovery State ────────────────────────────────────────────────
   const [nickname, setNickname]             = useState('');
@@ -63,6 +74,7 @@ export default function Home() {
   const whiteboardRef          = useRef(null);
   const audioContextRef        = useRef(null);
   const pendingInvitePeerRef   = useRef(null);
+  const readReceiptsSentRef        = useRef(new Set());
 
   // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) =>
@@ -283,6 +295,8 @@ export default function Home() {
     sendReaction,
     sendEdit,
     sendDelete,
+    sendDeliveredReceipt,
+    sendReadReceipt,
     sendLinkPreview,
     sendWhiteboardEvent,
     sendPresenceEvent,
@@ -293,6 +307,23 @@ export default function Home() {
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
 
+    onMessageDelivered: ({ msgId }) => {
+      updateMsg(msgId, { status: 'delivered' });
+    },
+
+    onMessageRead: ({ msgId }) => {
+      // All messages up to this point are also implicitly read in many systems, 
+      // but we'll just update the specific one or all previous ones.
+      setMessages((prev) => prev.map(m => {
+        if (m.sender === 'me' && (m.id === msgId || m.status === 'delivered' || m.status === 'sent')) {
+           // If we get a 'read' for a later message, we can assume earlier ones are read
+           // But let's keep it simple for now: only update the target or if it's older
+           return { ...m, status: 'read' };
+        }
+        return m;
+      }));
+    },
+
     onPresence: (message) => {
       switch (message.type) {
         case 'whiteboard-open':
@@ -300,6 +331,9 @@ export default function Home() {
           break;
         case 'whiteboard-close':
           setPeerWhiteboardActive(false);
+          break;
+        case 'identify':
+          setPeerNickname(message.nickname || 'Peer');
           break;
         case 'page-hidden':
           pushToast('Peer switched tab or minimized the app.', 'navigation');
@@ -329,6 +363,7 @@ export default function Home() {
         status: 'receiving', progress: 0,
         timestamp: Date.now(),
       });
+      sendDeliveredReceipt(id);
     },
 
     onFileReceived: ({ blob }) => {
@@ -352,6 +387,15 @@ export default function Home() {
 
     onConnected: async () => {
       setStatus('connected');
+      sendPresenceEvent('identify', { nickname });
+      
+      // Fallback: Use nickname from invite if not already set
+      setPeerNickname((prev) => {
+        if (prev) return prev;
+        if (pendingInvite) return pendingInvite.toNick;
+        if (incomingInvite) return incomingInvite.fromNick;
+        return prev;
+      });
       // Restore paused file messages back to active states
       setMessages((prev) =>
         prev.map((m) => {
@@ -413,11 +457,17 @@ export default function Home() {
       clearTimeout(typingTimeoutRef.current);
       pushToast('You have a new message.', 'message');
       playIncomingSound();
+      const msgId = id || genId();
       addMsg({
-        id: id || genId(), type: 'text', sender: 'peer',
+        id: msgId, type: 'text', sender: 'peer',
         text, timestamp: timestamp || Date.now(),
         replyTo: replyTo || null,
       });
+      sendDeliveredReceipt(msgId);
+      if (document.visibilityState === 'visible') {
+        sendReadReceipt(msgId);
+        readReceiptsSentRef.current.add(msgId);
+      }
     },
 
     onTyping: () => {
@@ -498,6 +548,23 @@ export default function Home() {
     };
   }, [status, sendPresenceEvent]);
 
+  // Send read receipts when window becomes visible
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && (status === 'connected' || status === 'transferring')) {
+        // Find unread peer messages and send read receipts
+        messages.forEach((m) => {
+          if (m.sender === 'peer' && !readReceiptsSentRef.current.has(m.id)) {
+            sendReadReceipt(m.id);
+            readReceiptsSentRef.current.add(m.id);
+          }
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [messages, status, sendReadReceipt]);
+
   // Keep refs in sync
   useEffect(() => { sendReactionRef.current      = sendReaction;      }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
@@ -543,6 +610,7 @@ export default function Home() {
     setLobbyCode('');
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
+    setPeerNickname('');
     setShowWhiteboard(false); setReplyingTo(null); setQueueVersion(0);
     setIncomingInvite(null); setPendingInvite(null);
     cryptoKeyRef.current           = null;
@@ -708,6 +776,7 @@ export default function Home() {
     if (id === false || !id) return;
     addMsg({
       id, type: 'text', sender: 'me', text,
+      status: 'sent', // Initial status for double ticks
       timestamp: Date.now(),
       replyTo: replyingTo
         ? {
@@ -734,7 +803,12 @@ export default function Home() {
   // ── Delete ─────────────────────────────────────────────────────────
   const handleDelete = useCallback((msgId) => {
     setMessages((prev) =>
-      prev.map((m) => m.id === msgId ? { ...m, deleted: true } : m)
+      prev.map((m) => {
+        if (m.id !== msgId) return m;
+        // Revoke URL if exists
+        if (m.previewUrl) URL.revokeObjectURL(m.previewUrl);
+        return { ...m, deleted: true, blob: null, previewUrl: null };
+      })
     );
     sendDelete(msgId);
   }, [sendDelete]);
@@ -788,11 +862,11 @@ export default function Home() {
 
 
           <div
-            className="flex h-screen w-full flex-col overflow-hidden border-l border-border-secondary bg-bg-primary transition-all duration-300 dark:border-border-primary dark:bg-bg-secondary border-l-0"
+            className="flex h-screen w-full flex-col overflow-hidden transition-all duration-300  border-l-0"
           >
 
           {/* Header */}
-          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-border-secondary bg-bg-primary px-4 py-3 dark:border-border-primary dark:bg-bg-secondary sm:px-5 lg:px-6">
+          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5 lg:px-6">
             <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <button
                 onClick={reset}
@@ -800,14 +874,24 @@ export default function Home() {
               >
                 ← Leave
               </button>
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-text-primary dark:text-text-primary sm:text-base">
-                    Chat
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* Avatar */}
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white font-bold shadow-sm ${getAvatarColor(peerNickname)}`}>
+                  {(peerNickname || '?').charAt(0).toUpperCase()}
+                </div>
+                
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-bold text-text-primary dark:text-text-primary sm:text-base">
+                      {peerNickname || 'Connecting...'}
+                    </p>
+                    <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
+                      <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
+                    </span>
+                  </div>
+                  <p className="truncate text-[10px] font-medium text-text-secondary dark:text-text-secondary/60 uppercase tracking-wider leading-none">
+                     {status === 'transferring' ? 'Sending files...' : 'Secure Session'}
                   </p>
-                  <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
-                    <span className={`h-2.5 w-2.5 rounded-full ${connectionDotClass}`} />
-                  </span>
                 </div>
               </div>
             </div>
@@ -837,17 +921,14 @@ export default function Home() {
           <div className="flex-1 overflow-y-auto bg-bg-secondary px-3 py-4 dark:bg-bg-tertiary sm:px-4 sm:py-5 lg:px-6">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
               {messages.length === 0 && (
-                <div className="mx-auto mt-8 max-w-md rounded-[28px] bg-bg-primary px-6 py-8 text-center shadow-sm dark:bg-bg-secondary">
+                <div className="mx-auto mt-8 max-w-md rounded-[28px] px-6 py-8 text-center">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-bg-tertiary text-brand-primary dark:bg-bg-tertiary dark:text-brand-primary">
                     <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
                     </svg>
                   </div>
                   <p className="text-base font-semibold text-text-primary dark:text-text-primary">
-                    Your conversation starts here
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-text-secondary dark:text-text-secondary">
-                    Send a message, drop a file, or open the whiteboard. This layout now stays focused like a real chat window.
+                    Start a conversation
                   </p>
                 </div>
               )}
@@ -886,6 +967,7 @@ export default function Home() {
                           onDownload={downloadMsg}
                           onPreview={(url) => setLightboxUrl(url)}
                           onCancel={cancelQueuedFile}
+                          onDelete={handleDelete}
                         />
                       )}
 
@@ -913,7 +995,7 @@ export default function Home() {
             </div>
           )}
 
-          <div className="shrink-0 px-3 py-2 sm:px-4 lg:px-5">
+          <div className="shrink-0 px-3 py-2 sm:px-4 lg:px-5 bg-bg-secondary dark:bg-bg-tertiary">
             <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
               {/* Send queue */}
               <SendQueue

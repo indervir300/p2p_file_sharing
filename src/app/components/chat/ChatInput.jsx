@@ -54,12 +54,12 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
       )}
 
       {/* ── Input row ─────────────────────────────────────────────── */}
-      <div className="flex items-end gap-2 rounded-[28px] border border-border-secondary p-1.5 shadow-sm dark:border-border-primary dark:bg-bg-secondary/60 sm:gap-3 sm:p-2">
+      <div className="flex items-end gap-2 rounded-[28px] border border-border-secondary p-1 dark:border-border-primary sm:gap-1">
 
         <button
           onClick={() => fileRef.current?.click()}
           title="Attach files"
-          className="shrink-0 rounded-2xl p-2.5 text-text-secondary transition-colors hover:bg-bg-secondary dark:bg-bg-tertiary/70 dark:text-text-secondary dark:hover:bg-bg-tertiary sm:p-3"
+          className="shrink-0 rounded-full mb-0.5 p-2.5 text-text-secondary transition-colors hover:bg-bg-secondary dark:text-text-secondary sm:p-3"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -76,14 +76,14 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
           onKeyDown={handleKeyDown}
           placeholder={replyingTo ? 'Write a reply…' : 'Message…'}
           rows={1}
-          className="min-h-12 flex-1 resize-none rounded-2xl border border-transparent bg-transparent px-2 py-2.5 text-sm leading-6 text-text-primary placeholder-text-secondary/50 outline-none transition-colors focus:border-border-secondary dark:text-text-primary dark:placeholder-text-secondary/50 dark:focus:border-border-primary sm:px-3"
+          className="min-h-12 flex-1 resize-none rounded-2xl bg-transparent px-2 py-2.5 text-sm leading-6 text-text-primary placeholder-text-secondary/50 outline-none transition-colors focus:border-border-secondary dark:text-text-primary dark:placeholder-text-secondary/50 dark:focus:border-border-primary sm:px-3"
           style={{ maxHeight: '120px', overflowY: 'auto' }}
         />
 
         <button
           onClick={send}
           title="Send"
-          className="shrink-0 rounded-2xl bg-brand-primary p-2.5 text-white shadow-lg shadow-brand-primary/25 transition-transform hover:scale-[1.03] hover:bg-brand-primary-hover active:scale-[0.98] sm:p-3"
+          className="shrink-0 rounded-full bg-brand-primary p-2 mb-0.5 text-white transition-transform hover:scale-[1.03] hover:bg-brand-primary-hover active:scale-[0.98] sm:p-3"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

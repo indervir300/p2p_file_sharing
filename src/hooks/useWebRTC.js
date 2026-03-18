@@ -34,6 +34,8 @@ export function useWebRTC({
   onLinkPreview,
   onStateChange,
   onPresence,
+  onMessageDelivered, // { msgId }
+  onMessageRead,      // { msgId }
   encryptChunk,
   decryptChunk,
   wsSend,
@@ -261,6 +263,7 @@ export function useWebRTC({
 
     if (kind?.startsWith('wb-')) { onWhiteboardEvent?.(message); return; }
     if (kind === 'typing')       { onTyping?.(); return; }
+    if (kind === 'presence')     { onPresence?.(message); return; }
 
     if (kind === 'reaction') {
       onReaction?.({ msgId: message.msgId, emoji: message.emoji, fromPeer: true });
@@ -278,6 +281,8 @@ export function useWebRTC({
     if (kind === 'edit') { onMessageEdit?.({ id: message.id, newText: message.newText }); return; }
     if (kind === 'delete') { onMessageDelete?.({ id: message.id }); return; }
     if (kind === 'link-preview') { onLinkPreview?.({ msgId: message.msgId, preview: message.preview }); return; }
+    if (kind === 'delivered') { onMessageDelivered?.({ msgId: message.msgId }); return; }
+    if (kind === 'read') { onMessageRead?.({ msgId: message.msgId }); return; }
 
     if (kind === 'transfer-ack') {
       // Update sender's safe resume point — use receiver's offset (more accurate)
@@ -369,6 +374,7 @@ export function useWebRTC({
   }, [
     onTyping, onReaction, onChatMessage, onWhiteboardEvent,
     onMessageEdit, onMessageDelete, onLinkPreview,
+    onMessageDelivered, onMessageRead,
     onPresence,
     onProgress, onFileMeta, processTransferDone, sendBuffer, sendDone, wsSend,
   ]);
@@ -635,6 +641,20 @@ export function useWebRTC({
     if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
   }, [wsSend]);
 
+  const sendDeliveredReceipt = useCallback((msgId) => {
+    const payload = { kind: 'delivered', msgId, timestamp: Date.now() };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
+    const dc = dcRef.current;
+    if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
+  }, [wsSend]);
+
+  const sendReadReceipt = useCallback((msgId) => {
+    const payload = { kind: 'read', msgId, timestamp: Date.now() };
+    if (isRelayMode.current) { wsSend?.({ type: 'relay', payload }); return; }
+    const dc = dcRef.current;
+    if (dc?.readyState === 'open') dc.send(JSON.stringify(payload));
+  }, [wsSend]);
+
   // ── File send ──────────────────────────────────────────────────────
   const sendFile = useCallback(async (file, transferId = makeId()) => {
     if (sendingRef.current) return;
@@ -745,6 +765,8 @@ export function useWebRTC({
     sendReaction,
     sendEdit,
     sendDelete,
+    sendDeliveredReceipt,
+    sendReadReceipt,
     sendLinkPreview,
     sendWhiteboardEvent,
     sendPresenceEvent,
