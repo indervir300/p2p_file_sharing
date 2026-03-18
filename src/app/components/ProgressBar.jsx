@@ -26,7 +26,7 @@ export default function ProgressBar({ progress }) {
 
   return (
     <div className="w-full space-y-2">
-      <div className="flex justify-between text-sm text-slate-600">
+      <div className="flex justify-between text-sm text-text-secondary">
         <span className="truncate pr-2">
           {formatSize(transferred)} / {formatSize(total)}
         </span>
@@ -34,9 +34,9 @@ export default function ProgressBar({ progress }) {
       </div>
 
       {/* Progress bar */}
-      <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
+      <div className="h-3 w-full overflow-hidden rounded-full bg-bg-tertiary">
         <div
-          className="h-3 rounded-full bg-slate-900 transition-all duration-300"
+          className="h-3 rounded-full bg-brand-primary transition-all duration-300"
           style={{
             width: `${percent}%`,
           }}
@@ -44,7 +44,7 @@ export default function ProgressBar({ progress }) {
       </div>
 
       {/* Speed & ETA */}
-      <div className="flex justify-between text-xs text-slate-500">
+      <div className="flex justify-between text-xs text-text-secondary">
         <span>{speed > 0 ? `${formatSpeed(speed)}` : ''}</span>
         <span>{speed > 0 && percent < 100 ? `~${etaLabel} remaining` : ''}</span>
       </div>

@@ -5,7 +5,7 @@ export default function ReactionPicker({ onSelect, onClose, alignRight = false, 
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className={`absolute bottom-full mb-1.5 z-50 flex items-center gap-0.5
-        rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+        rounded-2xl bg-bg-primary dark:bg-bg-secondary border border-border-secondary dark:border-border-primary
         shadow-xl px-2 py-1.5 ${alignRight ? 'right-0' : 'left-0'}`}
       >
         {EMOJIS.map((emoji) => (
@@ -14,8 +14,8 @@ export default function ReactionPicker({ onSelect, onClose, alignRight = false, 
             onClick={() => onSelect(emoji)}
             className={`text-lg p-1 rounded-lg transition-all hover:scale-125 ${
               myCurrentEmoji === emoji
-                ? 'bg-indigo-100 dark:bg-indigo-900 scale-110'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+                ? 'bg-brand-primary/20 scale-110 shadow-sm'
+                : 'hover:bg-bg-secondary dark:hover:bg-bg-tertiary'
             }`}
             title={myCurrentEmoji === emoji ? 'Remove reaction' : emoji}
           >

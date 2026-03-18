@@ -3,17 +3,17 @@ export default function PeerAvatar({ connectionType }) {
   const isConnected = !!connectionType;
 
   const dotColor = !isConnected
-    ? 'bg-slate-300 dark:bg-slate-600'
+    ? 'bg-bg-tertiary'
     : isRelay
-    ? 'bg-amber-400'
-    : 'bg-emerald-400';
+    ? 'bg-brand-warning'
+    : 'bg-brand-success';
 
   return (
     <div className="relative shrink-0">
       {/* Avatar */}
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-bg-secondary dark:bg-bg-tertiary">
         <svg
-          className="h-5 w-5 text-slate-500 dark:text-slate-400"
+          className="h-5 w-5 text-text-secondary"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -28,7 +28,7 @@ export default function PeerAvatar({ connectionType }) {
       </div>
 
       {/* Status dot — bottom right */}
-      <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-slate-900 ${dotColor}`} />
+      <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-bg-primary dark:border-bg-secondary ${dotColor}`} />
     </div>
   );
 }

@@ -50,7 +50,11 @@ export default function AudioVisualizer({ src, isMine }) {
       const barCount = 40;
       const barW     = (W / barCount) - 1.5;
       const step     = Math.floor(data.length / barCount);
-      const color    = isMine ? 'rgba(255,255,255,0.8)' : 'rgba(15,23,42,0.75)';
+      // Use text colors for a themed look
+      const isDark   = document.documentElement.classList.contains('dark');
+      const lightCol = 'rgba(31,35,40,0.75)'; // GitHub light primary text
+      const darkCol  = 'rgba(201,209,217,0.75)'; // GitHub dark primary text
+      const color    = isMine ? 'rgba(255,255,255,0.8)' : (isDark ? darkCol : lightCol);
 
       for (let i = 0; i < barCount; i++) {
         const val    = data[i * step] / 255;
@@ -83,7 +87,10 @@ export default function AudioVisualizer({ src, isMine }) {
 
     const barCount = 40;
     const barW     = (W / barCount) - 1.5;
-    const color    = isMine ? 'rgba(255,255,255,0.3)' : 'rgba(15,23,42,0.2)';
+    const isDark   = document.documentElement.classList.contains('dark');
+    const lightCol = 'rgba(31,35,40,0.2)';
+    const darkCol  = 'rgba(201,209,217,0.2)';
+    const color    = isMine ? 'rgba(255,255,255,0.3)' : (isDark ? darkCol : lightCol);
 
     for (let i = 0; i < barCount; i++) {
       const x      = i * (barW + 1.5);
@@ -158,7 +165,7 @@ export default function AudioVisualizer({ src, isMine }) {
           className={`shrink-0 flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
             isMine
               ? 'bg-white/20 hover:bg-white/30 text-white'
-              : 'bg-slate-900 dark:bg-slate-100 hover:bg-slate-700 dark:hover:bg-slate-300 text-white dark:text-slate-900'
+              : 'bg-brand-primary hover:bg-brand-primary-hover text-white'
           }`}
         >
           {playing ? (
@@ -186,7 +193,7 @@ export default function AudioVisualizer({ src, isMine }) {
 
         {/* Time */}
         <span className={`shrink-0 text-[10px] font-medium tabular-nums ${
-          isMine ? 'text-white/60' : 'text-slate-400 dark:text-slate-500'
+          isMine ? 'text-white/60' : 'text-text-secondary dark:text-text-secondary'
         }`}>
           {formatTime(current)}/{formatTime(duration)}
         </span>
@@ -195,13 +202,13 @@ export default function AudioVisualizer({ src, isMine }) {
       {/* Seek bar */}
       <div
         className={`h-1 rounded-full cursor-pointer overflow-hidden ${
-          isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'
+          isMine ? 'bg-white/20' : 'bg-bg-tertiary'
         }`}
         onClick={handleSeek}
       >
         <div
           className={`h-full rounded-full transition-all ${
-            isMine ? 'bg-white' : 'bg-slate-700 dark:bg-slate-300'
+            isMine ? 'bg-white' : 'bg-brand-primary'
           }`}
           style={{ width: duration ? `${(current / duration) * 100}%` : '0%' }}
         />

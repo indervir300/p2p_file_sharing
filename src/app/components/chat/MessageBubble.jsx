@@ -35,8 +35,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
     return (
       <div className={`rounded-3xl px-4 py-3 text-sm italic shadow-sm select-none ${
         isMine
-          ? 'rounded-br-md bg-slate-700/45 text-white/30'
-          : 'rounded-bl-md border border-slate-200 bg-white/90 text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500'
+          ? 'rounded-br-md bg-bg-secondary/45 text-text-primary/30'
+          : 'rounded-bl-md border border-border-secondary bg-bg-primary/90 text-text-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary'
       }`}>
         🚫 Message deleted
       </div>
@@ -51,8 +51,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
         <div className={`mb-1 flex ${isMine ? 'justify-end' : 'justify-start'}`}>
           <div className={`max-w-[90%] rounded-2xl px-3 py-2 text-xs border-l-[3px] shadow-sm select-none ${
             isMine
-              ? 'border-sky-300 bg-slate-800/60 text-slate-300 dark:bg-slate-700/60'
-              : 'border-sky-400 bg-white/75 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+              ? 'border-brand-primary/50 bg-bg-secondary/60 text-text-secondary dark:bg-bg-tertiary/60'
+              : 'border-brand-primary bg-bg-primary/75 text-text-secondary dark:bg-bg-secondary dark:text-text-secondary'
           }`}>
             <p className="font-semibold mb-0.5 text-[10px] uppercase tracking-wide opacity-70">
               {msg.replyTo.sender === 'me' ? 'You' : 'Peer'}
@@ -68,8 +68,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
       {isEditing ? (
         <div className={`rounded-3xl px-4 py-3 shadow-sm ${
           isMine
-            ? 'rounded-br-md bg-slate-900 dark:bg-slate-700'
-            : 'rounded-bl-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
+            ? 'rounded-br-md bg-bg-tertiary border border-border-primary'
+            : 'rounded-bl-md border border-border-secondary bg-bg-secondary dark:border-border-primary dark:bg-bg-tertiary'
         }`}>
           <textarea
             ref={editRef}
@@ -81,24 +81,24 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
             }}
             rows={Math.min(editText.split('\n').length + 1, 6)}
             className={`w-full resize-none bg-transparent text-sm outline-none leading-relaxed ${
-              isMine ? 'text-white' : 'text-slate-800 dark:text-slate-100'
+              isMine ? 'text-text-primary' : 'text-text-primary dark:text-text-primary'
             }`}
           />
           <div className="flex justify-end gap-1.5 mt-1.5">
             <button
-              onClick={() => setIsEditing(false)}
-              className={`text-[11px] px-2 py-0.5 rounded-lg transition-colors ${
-                isMine ? 'text-white/50 hover:bg-white/10' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
+               onClick={() => setIsEditing(false)}
+               className={`text-[11px] px-2 py-0.5 rounded-lg transition-colors ${
+                 isMine ? 'text-text-secondary hover:bg-bg-secondary/20' : 'text-text-secondary hover:bg-bg-tertiary dark:hover:bg-bg-secondary'
+               }`}
+             >
               Cancel
             </button>
             <button
               onClick={saveEdit}
               className={`text-[11px] px-2 py-0.5 rounded-lg font-semibold transition-colors ${
                 isMine
-                  ? 'bg-white/20 text-white hover:bg-white/30'
-                  : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-700'
+                  ? 'bg-brand-primary text-white hover:bg-brand-primary-hover'
+                  : 'bg-brand-primary text-white hover:bg-brand-primary-hover'
               }`}
             >
               Save
@@ -109,8 +109,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
         <div
           className={`rounded-3xl px-4 py-3 text-sm leading-7 whitespace-pre-wrap break-words shadow-sm select-none ${
             isMine
-              ? 'rounded-br-md bg-gradient-to-br from-slate-900 to-slate-800 text-white dark:from-slate-700 dark:to-slate-700'
-              : 'rounded-bl-md border border-slate-200/90 bg-white/95 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+              ? 'rounded-br-md bg-brand-primary text-white'
+              : 'rounded-bl-md border border-border-secondary bg-bg-primary text-text-primary dark:border-border-primary dark:bg-bg-secondary dark:text-text-primary'
           }`}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
@@ -118,7 +118,7 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
         >
           {msg.text}
           {msg.edited && (
-            <span className={`ml-1.5 text-[10px] italic ${isMine ? 'text-white/35' : 'text-slate-400'}`}>
+            <span className={`ml-1.5 text-[10px] italic ${isMine ? 'text-white/60' : 'text-text-secondary'}`}>
               (edited)
             </span>
           )}
@@ -132,12 +132,12 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
       {/* ── Hover action buttons ─────────────────────────────────────── */}
       {!isEditing && (
-        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-1.5 py-1 shadow-lg shadow-slate-900/8 opacity-0 transition-all group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-black/20
+        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-border-secondary bg-bg-primary/95 px-1.5 py-1 shadow-lg shadow-bg-tertiary/8 opacity-0 transition-all group-hover:opacity-100 dark:border-border-primary dark:bg-bg-secondary/95 dark:shadow-bg-tertiary/40
           ${isMine ? 'left-2 group-hover:-translate-y-1' : 'right-2 group-hover:-translate-y-1'}`}
         >
           {/* Reply */}
           <button onClick={() => onReply?.(msg)} title="Reply"
-            className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+            className="p-1 rounded-full text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors">
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -146,14 +146,14 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
           {/* React */}
           <button onClick={() => setShowPicker((s) => !s)} title="React"
-            className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm leading-none">
+            className="p-1 rounded-full text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors text-sm leading-none">
             🙂
           </button>
 
           {/* Edit — own messages only */}
           {isMine && (
             <button onClick={startEdit} title="Edit"
-              className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+              className="p-1 rounded-full text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -164,7 +164,7 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
           {/* Delete — own messages only */}
           {isMine && (
             <button onClick={() => onDelete?.(msg.id)} title="Delete"
-              className="p-1 rounded-full text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 transition-colors">
+              className="p-1 rounded-full text-text-secondary hover:bg-brand-danger/10 hover:text-brand-danger transition-colors">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -193,8 +193,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
               <button key={emoji} onClick={() => onReact?.(msg.id, emoji)}
                 className={`flex items-center gap-0.5 rounded-full border px-2 py-1 text-xs shadow-sm transition-colors ${
                   r.mine
-                    ? 'bg-indigo-50 dark:bg-indigo-900/50 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
-                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    ? 'bg-brand-primary/10 dark:bg-brand-primary/20 border-brand-primary/30 dark:border-brand-primary/50 text-brand-primary dark:text-brand-primary-hover'
+                    : 'bg-bg-primary dark:bg-bg-secondary border-border-secondary dark:border-border-primary text-text-secondary dark:text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary'
                 }`}
               >
                 <span>{emoji}</span>

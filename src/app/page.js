@@ -13,7 +13,6 @@ import TypingIndicator  from '@/app/components/chat/TypingIndicator';
 import ChatInput        from '@/app/components/chat/ChatInput';
 import SendQueue        from '@/app/components/chat/SendQueue';
 import Whiteboard       from '@/app/components/whiteboard/Whiteboard';
-import MeetingPanel     from '@/app/components/meeting/MeetingPanel';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -38,13 +37,8 @@ export default function Home() {
   const [replyingTo, setReplyingTo]         = useState(null);
   const [queueVersion, setQueueVersion]     = useState(0);
   const [dragDepth, setDragDepth]           = useState(0);
-  const [showMeeting, setShowMeeting]       = useState(false);
-  const [meetingActive, setMeetingActive]   = useState(false);
-  const [mediaError, setMediaError]         = useState(null);
-  const [chatWidth, setChatWidth]           = useState(360);
   const [lobbyCode, setLobbyCode]           = useState('');
   const [toasts, setToasts]                 = useState([]);
-  const [peerMeetingActive, setPeerMeetingActive] = useState(false);
   const [peerWhiteboardActive, setPeerWhiteboardActive] = useState(false);
 
   // ── Refs ───────────────────────────────────────────────────────────
@@ -234,29 +228,9 @@ export default function Home() {
     getConnectionInfo,
     cleanup,
     handleRelayMessage,
-    startMeetingStreams,
-    stopMeeting,
-    toggleAudio,
-    toggleVideo,
-    toggleScreenShare,
-    localStream,
-    remoteStream,
-    isAudioMuted,
-    isVideoOff,
-    isScreenSharing,
-    localPresentationStream,
-    remoteAudioMuted,
-    remoteVideoOff,
-    remoteScreenSharing,
   } = useWebRTC({
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
-
-    onMediaError: (err) => setMediaError(err.message),
-    onMeetingStart: () => {
-      setMeetingActive(true);
-      pushToast('Meeting is available to join.', 'meeting');
-    },
 
     onPresence: (message) => {
       switch (message.type) {
@@ -265,12 +239,6 @@ export default function Home() {
           break;
         case 'whiteboard-close':
           setPeerWhiteboardActive(false);
-          break;
-        case 'meeting-open':
-          setPeerMeetingActive(true);
-          break;
-        case 'meeting-close':
-          setPeerMeetingActive(false);
           break;
         case 'page-hidden':
           pushToast('Peer switched tab or minimized the app.', 'navigation');
@@ -437,9 +405,6 @@ export default function Home() {
     decryptChunk: decryptFn,
   });
 
-  useEffect(() => {
-    if (showMeeting) setPeerMeetingActive(false);
-  }, [showMeeting]);
 
   useEffect(() => {
     if (showWhiteboard) setPeerWhiteboardActive(false);
@@ -735,12 +700,12 @@ export default function Home() {
 
   const connectionDotClass =
     status === 'error'
-      ? 'bg-red-500'
+      ? 'bg-brand-danger'
       : status === 'connected'
-        ? 'bg-emerald-500'
+        ? 'bg-brand-success'
         : status === 'transferring'
-          ? 'bg-blue-500 animate-pulse'
-          : 'bg-amber-500 animate-pulse';
+          ? 'bg-brand-primary animate-pulse'
+          : 'bg-brand-warning animate-pulse';
 
   const normalizedLobbyCode = lobbyCode.trim().toUpperCase();
   const canJoinLobbyCode = normalizedLobbyCode.length >= 4;
@@ -757,7 +722,7 @@ export default function Home() {
   // ────────────────────────────────────────────────────────────────────
   return (
     <main
-      className="min-h-screen bg-slate-100 dark:bg-slate-950"
+      className="min-h-screen bg-bg-secondary dark:bg-bg-tertiary"
       onDragEnter={handleDropEnter}
       onDragLeave={handleDropLeave}
       onDragOver={handleDropOver}
@@ -766,72 +731,25 @@ export default function Home() {
 
       {/* ══════  CHAT VIEW  ══════ */}
       {chatReady && (
-        <div className="relative flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
+        <div className="relative flex h-screen overflow-hidden bg-bg-secondary dark:bg-bg-tertiary">
 
-          {/* Meeting Panel */}
-          {showMeeting && (
-             <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-950 h-screen overflow-hidden">
-                <MeetingPanel
-                   isHost={mode === 'send'}
-                   meetingActive={meetingActive}
-                   localStream={localStream}
-                   localPresentationStream={localPresentationStream}
-                   remoteStream={remoteStream}
-                   onStartMeeting={async (opts = { audio: true, video: true }) => {
-                      setMeetingActive(true);
-                      await startMeetingStreams(opts);
-                   }}
-                   mediaError={mediaError}
-                   toggleAudio={toggleAudio}
-                   toggleVideo={toggleVideo}
-                   toggleScreenShare={toggleScreenShare}
-                   isAudioMuted={isAudioMuted}
-                   isVideoOff={isVideoOff}
-                   isScreenSharing={isScreenSharing}
-                   remoteAudioMuted={remoteAudioMuted}
-                   remoteVideoOff={remoteVideoOff}
-                   remoteScreenSharing={remoteScreenSharing}
-                   onLeaveMeeting={() => {
-                      stopMeeting();
-                      setShowMeeting(false);
-                      setMeetingActive(false);
-                   }}
-                />
-             </div>
-          )}
-
-          {/* Resizer */}
-          {showMeeting && (
-             <div 
-               className="w-1 cursor-col-resize shrink-0 bg-slate-300/70 hover:bg-blue-500 dark:bg-slate-700/70 dark:hover:bg-blue-500 z-10 transition-colors"
-               onMouseDown={(e) => {
-                 const startX = e.clientX;
-                 const startW = chatWidth;
-                 const onMove = (me) => setChatWidth(Math.max(280, Math.min(startW - (me.clientX - startX), window.innerWidth - 360)));
-                 const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-                 window.addEventListener('mousemove', onMove);
-                 window.addEventListener('mouseup', onUp);
-               }}
-             />
-          )}
 
           <div
-            style={{ width: showMeeting ? `${chatWidth}px` : '100%', minWidth: showMeeting ? '300px' : undefined }}
-            className={`flex h-screen flex-col overflow-hidden border-l border-slate-200 bg-white transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${!showMeeting && 'w-full border-l-0'}`}
+            className="flex h-screen w-full flex-col overflow-hidden border-l border-border-secondary bg-bg-primary transition-all duration-300 dark:border-border-primary dark:bg-bg-secondary border-l-0"
           >
 
           {/* Header */}
-          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5 lg:px-6">
+          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-border-secondary bg-bg-primary px-4 py-3 dark:border-border-primary dark:bg-bg-secondary sm:px-5 lg:px-6">
             <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <button
                 onClick={reset}
-                className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 sm:px-4"
+                className="shrink-0 rounded-full border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-primary dark:hover:bg-bg-tertiary sm:px-4"
               >
                 ← Leave
               </button>
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100 sm:text-base">
+                  <p className="truncate text-sm font-semibold text-text-primary dark:text-text-primary sm:text-base">
                     Chat
                   </p>
                   <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
@@ -843,34 +761,15 @@ export default function Home() {
             <div className="flex shrink-0 items-center gap-2">
               <button
                 onClick={() => {
-                  setShowMeeting((prev) => {
-                    const next = !prev;
-                    sendPresenceEvent(next ? 'meeting-open' : 'meeting-close');
-                    return next;
-                  });
-                }}
-                title={showMeeting ? "Close Meeting" : "Open Meeting"}
-                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 transition-colors dark:border-slate-700 dark:hover:bg-slate-800 ${showMeeting ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white text-slate-500 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-400'} ${peerMeetingActive ? 'ring-2 ring-blue-400/70 dark:ring-blue-500/70' : ''}`}
-              >
-                {peerMeetingActive && !showMeeting && (
-                  <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-blue-500 animate-pulse" />
-                )}
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
-              <button
-                onClick={() => {
                   setShowWhiteboard(true);
                   sendWhiteboardEvent({ kind: 'wb-open' });
                   sendPresenceEvent('whiteboard-open');
                 }}
                 title="Open whiteboard"
-                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${showWhiteboard ? 'ring-2 ring-emerald-400/70 dark:ring-emerald-500/70' : ''} ${peerWhiteboardActive ? 'ring-2 ring-emerald-400/70 dark:ring-emerald-500/70' : ''}`}
+                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${showWhiteboard ? 'ring-2 ring-brand-success/70' : ''} ${peerWhiteboardActive ? 'ring-2 ring-brand-success/70' : ''}`}
               >
                 {peerWhiteboardActive && !showWhiteboard && (
-                  <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-brand-success animate-pulse" />
                 )}
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -882,19 +781,19 @@ export default function Home() {
           </header>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto bg-slate-50 px-3 py-4 dark:bg-slate-950 sm:px-4 sm:py-5 lg:px-6">
+          <div className="flex-1 overflow-y-auto bg-bg-secondary px-3 py-4 dark:bg-bg-tertiary sm:px-4 sm:py-5 lg:px-6">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
               {messages.length === 0 && (
-                <div className="mx-auto mt-8 max-w-md rounded-[28px] bg-white px-6 py-8 text-center shadow-sm dark:bg-slate-900">
-                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400">
+                <div className="mx-auto mt-8 max-w-md rounded-[28px] bg-bg-primary px-6 py-8 text-center shadow-sm dark:bg-bg-secondary">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-bg-tertiary text-brand-primary dark:bg-bg-tertiary dark:text-brand-primary">
                     <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
                     </svg>
                   </div>
-                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <p className="text-base font-semibold text-text-primary dark:text-text-primary">
                     Your conversation starts here
                   </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                  <p className="mt-2 text-sm leading-6 text-text-secondary dark:text-text-secondary">
                     Send a message, drop a file, or open the whiteboard. This layout now stays focused like a real chat window.
                   </p>
                 </div>
@@ -904,7 +803,7 @@ export default function Home() {
                 if (msg.type === 'system') {
                   return (
                     <div key={msg.id} className="flex justify-center py-1">
-                      <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                      <span className="rounded-full bg-bg-secondary px-3 py-1.5 text-[11px] text-text-secondary dark:bg-bg-secondary dark:text-text-secondary">
                         {msg.text}
                       </span>
                     </div>
@@ -937,7 +836,7 @@ export default function Home() {
                         />
                       )}
 
-                      <p className={`mt-1 px-1 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400 ${isMine ? 'text-right' : 'text-left'}`}>
+                      <p className={`mt-1 px-1 text-[10px] font-medium uppercase tracking-[0.18em] text-text-secondary ${isMine ? 'text-right' : 'text-left'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString([], {
                           hour: '2-digit', minute: '2-digit',
                         })}
@@ -952,9 +851,8 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Error banner */}
           {errorMsg && (
-            <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-center text-xs text-red-700 dark:border-red-900 dark:bg-red-950/90 dark:text-red-300">
+            <div className="shrink-0 border-t border-brand-danger/20 bg-brand-danger/5 px-4 py-2 text-center text-xs text-brand-danger">
               {errorMsg}
               <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
                 Dismiss
@@ -1002,7 +900,7 @@ export default function Home() {
           </div>
 
           {dragDepth > 0 && (
-            <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/10 p-5 backdrop-blur-[2px] dark:bg-slate-950/30">
+            <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-bg-tertiary/10 p-5 backdrop-blur-[2px] dark:bg-bg-tertiary/30">
               <div className="pointer-events-auto w-full max-w-2xl">
                 <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
               </div>
@@ -1014,13 +912,13 @@ export default function Home() {
       {/* ══════  LOBBY VIEW  ══════ */}
       {!chatReady && (
         <div className="relative flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-6xl rounded-3xl bg-white/90 p-6 shadow-xl shadow-slate-900/5 backdrop-blur dark:bg-slate-900/75 lg:p-8">
+          <div className="w-full max-w-6xl rounded-3xl bg-bg-primary/90 p-6 shadow-xl shadow-bg-tertiary/5 backdrop-blur dark:bg-bg-secondary/75 lg:p-8">
 
             <div className="mb-8 flex items-center justify-between">
               {mode ? (
                 <button
                   onClick={reset}
-                  className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                  className="group inline-flex items-center gap-1.5 rounded-full border border-border-secondary bg-bg-primary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary dark:hover:text-text-primary"
                 >
                   <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -1034,33 +932,33 @@ export default function Home() {
             {mode !== 'send' ? (
               <div className="grid gap-8 lg:grid-cols-[0.9fr_1.3fr] lg:items-center">
                 <section>
-                  <h1 className="max-w-xl text-4xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-5xl">
+                  <h1 className="max-w-xl text-4xl font-semibold leading-tight text-text-primary dark:text-text-primary sm:text-5xl">
                     Meet, chat, and share files instantly.
                   </h1>
 
-                  <p className="mt-4 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-300">
-                    Join with a room code or start a new meeting, similar to Google Meet web flow.
+                  <p className="mt-4 max-w-xl text-base leading-7 text-text-secondary dark:text-text-secondary">
+                    Join with a room code or start a new session to share files and chat securely.
                   </p>
                 </section>
 
-                <section className="rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-900 sm:p-7">
-                  <p className="text-base font-semibold text-slate-800 dark:text-slate-200">
+                <section className="rounded-2xl bg-bg-primary p-6 shadow-sm dark:bg-bg-secondary sm:p-7">
+                  <p className="text-base font-semibold text-text-primary dark:text-text-primary">
                     Start or join with a code
                   </p>
 
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                     <button
                       onClick={startSend}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 4v16m8-8H4" />
                       </svg>
-                      New meeting
+                      New session
                     </button>
 
                     <div className="relative flex-1">
-                      <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
                       </svg>
                       <input
@@ -1070,29 +968,29 @@ export default function Home() {
                         onKeyDown={(e) => e.key === 'Enter' && handleLobbyJoin()}
                         placeholder="Enter a code"
                         maxLength={12}
-                        className="w-full rounded-full border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm font-medium tracking-wide text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-500"
+                        className="w-full rounded-full border border-border-primary bg-bg-primary py-3 pl-10 pr-4 text-sm font-medium tracking-wide text-text-primary outline-none transition-colors placeholder:text-text-secondary focus:border-brand-primary dark:border-border-primary dark:bg-bg-tertiary dark:text-text-primary dark:placeholder:text-text-secondary dark:focus:border-brand-primary"
                       />
                     </div>
 
                     <button
                       onClick={handleLobbyJoin}
                       disabled={!canJoinLobbyCode}
-                      className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                      className="rounded-full border border-border-primary px-5 py-3 text-sm font-semibold text-text-primary transition-colors hover:border-border-secondary hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-45 dark:border-border-primary dark:text-text-primary dark:hover:bg-bg-tertiary"
                     >
                       Join
                     </button>
                   </div>
 
                   {mode === 'receive' && status !== 'idle' && (
-                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300">
+                   <div className="mt-5 rounded-xl border border-brand-primary/20 bg-brand-primary/5 px-4 py-3 text-sm text-brand-primary dark:border-brand-primary/30 dark:bg-brand-primary/10 dark:text-brand-primary">
                       <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-brand-primary" />
                         Connecting to room {normalizedLobbyCode || sessionCode || '...'}
                       </div>
                     </div>
                   )}
 
-                  <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-4 text-xs text-text-secondary dark:text-text-secondary">
                     Tip: Use the room code shared by your teammate. Codes are case-insensitive.
                   </p>
                 </section>
@@ -1100,10 +998,10 @@ export default function Home() {
             ) : (
               <div className="mx-auto w-full max-w-md">
                 <header className="mb-7 text-center">
-                  <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                  <h1 className="text-3xl font-bold text-text-primary dark:text-text-primary">
                     FileShare &amp; Chat
                   </h1>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary">
                     Share this code to invite others
                   </p>
                 </header>
@@ -1112,12 +1010,12 @@ export default function Home() {
             )}
 
             {errorMsg && (
-              <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+              <div className="mt-6 rounded-xl border border-brand-danger/20 bg-brand-danger/5 px-4 py-3 text-center text-sm text-brand-danger dark:border-brand-danger/30 dark:bg-brand-danger/10 dark:text-brand-danger">
                 {errorMsg}
               </div>
             )}
 
-            <footer className="mt-8 text-center text-xs text-slate-400">
+            <footer className="mt-8 text-center text-xs text-text-secondary">
               Fast file sharing and chat in one room.
             </footer>
           </div>
@@ -1153,14 +1051,14 @@ export default function Home() {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-slate-900/10 backdrop-blur ${
+            className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-bg-tertiary/10 backdrop-blur ${
               toast.tone === 'message'
-                ? 'border-blue-200 bg-blue-50/95 text-blue-900 dark:border-blue-800 dark:bg-blue-950/95 dark:text-blue-100'
+                ? 'border-brand-primary/20 bg-brand-primary/5 text-brand-primary dark:border-brand-primary/30 dark:bg-brand-primary/10 dark:text-brand-primary'
                 : toast.tone === 'navigation'
-                  ? 'border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-800 dark:bg-amber-950/95 dark:text-amber-100'
-                  : toast.tone === 'meeting'
-                    ? 'border-emerald-200 bg-emerald-50/95 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/95 dark:text-emerald-100'
-                    : 'border-slate-200/90 bg-white/95 text-slate-700 dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200'
+                  ? 'border-brand-warning/20 bg-brand-warning/5 text-brand-warning'
+                  : toast.tone === 'session'
+                    ? 'border-brand-success/20 bg-brand-success/5 text-brand-success dark:border-brand-success/30 dark:bg-brand-success/10 dark:text-brand-success'
+                    : 'border-border-secondary bg-bg-primary/95 text-text-primary dark:border-border-primary dark:bg-bg-secondary/95 dark:text-text-primary'
             }`}
           >
             {toast.text}

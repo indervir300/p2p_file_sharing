@@ -74,16 +74,16 @@ export default function FilePreviewModal({ msg, onClose }) {
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-2xl"
+        className="relative flex flex-col w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-bg-primary dark:bg-bg-secondary shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-border-secondary dark:border-border-primary">
           <div className="min-w-0 flex-1 mr-4">
-            <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <p className="truncate text-sm font-semibold text-text-primary dark:text-text-primary">
               {msg.name}
             </p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 capitalize">
+            <p className="text-xs text-text-secondary dark:text-text-secondary mt-0.5 capitalize">
               {kind} preview
             </p>
           </div>
@@ -92,14 +92,14 @@ export default function FilePreviewModal({ msg, onClose }) {
               <a
                 href={url}
                 download={msg.name}
-                className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="rounded-lg border border-border-primary dark:border-border-primary px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors"
               >
                 Download
               </a>
             )}
             <button
               onClick={onClose}
-              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              className="rounded-full p-1.5 text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -109,7 +109,7 @@ export default function FilePreviewModal({ msg, onClose }) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950">
+        <div className="flex-1 overflow-auto bg-bg-secondary dark:bg-bg-tertiary">
 
           {/* PDF */}
           {kind === 'pdf' && url && (
@@ -159,7 +159,7 @@ export default function FilePreviewModal({ msg, onClose }) {
                     className={`hljs language-${getExt(msg.name)}`}
                     dangerouslySetInnerHTML={{ __html: highlighted }}
                   />
-                : <code className="text-slate-700 dark:text-slate-200">
+                : <code className="text-text-primary dark:text-text-primary">
                     {codeContent || 'Loading…'}
                   </code>
               }
@@ -169,14 +169,14 @@ export default function FilePreviewModal({ msg, onClose }) {
           {/* Office */}
           {kind === 'office' && officeViewerUrl && (
             <div className="flex flex-col items-center justify-center gap-4 p-8 min-h-[50vh]">
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-text-secondary dark:text-text-secondary">
                 Office documents open in Microsoft's online viewer
               </p>
               <a
                 href={officeViewerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-xl bg-slate-900 dark:bg-slate-100 px-6 py-3 text-sm font-semibold text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors"
+                className="rounded-xl bg-brand-primary px-6 py-3 text-sm font-semibold text-white hover:bg-brand-primary-hover transition-colors"
               >
                 Open in Office Viewer ↗
               </a>
@@ -186,7 +186,7 @@ export default function FilePreviewModal({ msg, onClose }) {
           {/* Fallback — no URL yet */}
           {!url && (
             <div className="flex items-center justify-center p-8 min-h-[20vh]">
-              <p className="text-sm text-slate-400">File not yet available for preview.</p>
+              <p className="text-sm text-text-secondary">File not yet available for preview.</p>
             </div>
           )}
         </div>

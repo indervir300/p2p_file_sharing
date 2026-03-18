@@ -25,8 +25,8 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
     !['sending', 'receiving', 'queued'].includes(status);
 
   const bubble = isMine
-    ? 'bg-gradient-to-br from-slate-900 to-slate-800 text-white dark:from-slate-700 dark:to-slate-700'
-    : 'bg-white/95 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100';
+    ? 'bg-brand-primary text-white'
+    : 'bg-bg-primary dark:bg-bg-secondary border border-border-secondary dark:border-border-primary text-text-primary dark:text-text-primary';
 
   return (
     <>
@@ -54,18 +54,18 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
         {/* ── Non-media file row ────────────────────────────────────── */}
         {!isImg && !isVid && !(isAud && previewUrl && !isBusy) && (
           <div className="flex items-center gap-3 px-4 py-4">
-            <div className={`shrink-0 rounded-2xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-slate-100 dark:bg-slate-700'}`}>
-              <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className={`shrink-0 rounded-2xl p-2.5 ${isMine ? 'bg-white/10' : 'bg-bg-secondary dark:bg-bg-tertiary'}`}>
+              <svg className={`h-5 w-5 ${isMine ? 'text-white' : 'text-text-secondary'}`}
+                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <p className={`truncate text-sm font-medium ${isMine ? 'text-white' : 'text-slate-800 dark:text-slate-100'}`}>
+              <p className={`truncate text-sm font-medium ${isMine ? 'text-white' : 'text-text-primary'}`}>
                 {name}
               </p>
-              <p className={`text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
+              <p className={`text-xs ${isMine ? 'text-white/60' : 'text-text-secondary'}`}>
                 {formatSize(size)}
               </p>
             </div>
@@ -74,18 +74,18 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
         {/* Name + size under media */}
         {(isImg || isVid || (isAud && previewUrl && !isBusy)) && (
-          <p className={`truncate px-4 pt-2 text-xs ${isMine ? 'text-white/60' : 'text-slate-500 dark:text-slate-400'}`}>
+          <p className={`truncate px-4 pt-2 text-xs ${isMine ? 'text-white/60' : 'text-text-secondary'}`}>
             {name} · {formatSize(size)}
           </p>
         )}
 
         {/* ── Progress bar ──────────────────────────────────────────── */}
         {(isBusy || status === 'paused') && (
-          <div className={`mx-4 my-2 h-1.5 rounded-full ${isMine ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-600'}`}>
+          <div className={`mx-4 my-2 h-1.5 rounded-full ${isMine ? 'bg-white/20' : 'bg-bg-tertiary dark:bg-bg-tertiary'}`}>
             <div
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                status === 'paused' ? 'bg-amber-400'
-                : isMine ? 'bg-white' : 'bg-slate-700 dark:bg-slate-300'
+                status === 'paused' ? 'bg-brand-warning'
+                : isMine ? 'bg-white' : 'bg-brand-primary'
               }`}
               style={{ width: `${progress}%` }}
             />
@@ -94,7 +94,7 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
         {/* ── Footer row ────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-2 px-4 pb-4 pt-2">
-          <span className={`text-xs ${isMine ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'}`}>
+          <span className={`text-xs ${isMine ? 'text-white/50' : 'text-text-secondary'}`}>
             {status === 'queued'    && 'Queued…'}
             {status === 'sending'   && `Sending ${progress}%`}
             {status === 'paused'    && `Paused · ${progress}% — resuming…`}
@@ -111,7 +111,7 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
                 className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                   isMine
                     ? 'border-white/20 text-white/70 hover:bg-white/10'
-                    : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    : 'border-border-primary dark:border-border-primary text-text-primary dark:text-text-primary hover:bg-bg-secondary dark:hover:bg-bg-tertiary'
                 }`}>
                 Cancel
               </button>
@@ -124,7 +124,7 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
                 className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                   isMine
                     ? 'border-white/20 text-white/70 hover:bg-white/10'
-                    : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    : 'border-border-primary dark:border-border-primary text-text-primary dark:text-text-primary hover:bg-bg-secondary dark:hover:bg-bg-tertiary'
                 }`}
               >
                 Preview
@@ -134,7 +134,7 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
             {/* Download — peer received */}
             {!isMine && status === 'received' && (
               <button onClick={() => onDownload?.(msg)}
-                className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                className="rounded-lg border border-border-primary dark:border-border-primary px-3 py-1 text-xs font-medium text-text-primary dark:text-text-primary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors">
                 {isImg || isVid ? 'Save' : 'Download'}
               </button>
             )}

@@ -34,22 +34,23 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
     const ctx    = canvas.getContext('2d');
     ctxRef.current = ctx;
 
+    const getBgColor = () => getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#ffffff';
+    
     const fit = () => {
-      // Preserve current drawing across resize
       const tmp = document.createElement('canvas');
       tmp.width  = canvas.width;
       tmp.height = canvas.height;
       tmp.getContext('2d').drawImage(canvas, 0, 0);
       canvas.width  = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = getBgColor();
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(tmp, 0, 0);
     };
 
     canvas.width  = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = getBgColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const ro = new ResizeObserver(fit);
@@ -60,7 +61,8 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
   // ── Draw one segment ───────────────────────────────────────────────
   const drawSeg = useCallback((ctx, from, to, c, w, t) => {
     ctx.beginPath();
-    ctx.strokeStyle = t === 'eraser' ? '#ffffff' : c;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#ffffff';
+    ctx.strokeStyle = t === 'eraser' ? bg : c;
     ctx.lineWidth   = t === 'eraser' ? w * 4 : w;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
@@ -74,7 +76,8 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
     const canvas = canvasRef.current;
     const ctx    = ctxRef.current;
     if (!canvas || !ctx) return;
-    ctx.fillStyle = '#ffffff';
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#ffffff';
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     strokesRef.current.forEach((s) => {
       for (let i = 1; i < s.points.length; i++) {
@@ -172,7 +175,8 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
 
     if (event.kind === 'wb-clear') {
       strokesRef.current = [];
-      ctx.fillStyle = '#ffffff';
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#ffffff';
+      ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       return;
     }
@@ -210,20 +214,20 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
   useImperativeHandle(ref, () => ({ handlePeerEvent }), [handlePeerEvent]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white">
+    <div className="fixed inset-0 z-50 flex flex-col bg-bg-primary">
 
       {/* ── Toolbar ── */}
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-white overflow-x-auto">
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border-secondary bg-bg-primary overflow-x-auto">
 
         {/* Back */}
         <button
           onClick={onClose}
-          className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+          className="shrink-0 rounded-lg border border-border-secondary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-secondary transition-colors"
         >
           ← Back
         </button>
 
-        <div className="w-px h-5 shrink-0 bg-slate-200" />
+        <div className="w-px h-5 shrink-0 bg-border-secondary" />
 
         {/* Pen / Eraser */}
         <div className="flex items-center gap-1 shrink-0">
@@ -231,7 +235,7 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
             onClick={() => setTool('pen')}
             title="Pen"
             className={`rounded-lg p-1.5 text-base transition-colors ${
-              tool === 'pen' ? 'bg-slate-900 text-white' : 'hover:bg-slate-100'
+              tool === 'pen' ? 'bg-brand-primary text-white' : 'hover:bg-bg-secondary text-text-secondary'
             }`}
           >
             ✏️
@@ -240,14 +244,14 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
             onClick={() => setTool('eraser')}
             title="Eraser"
             className={`rounded-lg p-1.5 text-base transition-colors ${
-              tool === 'eraser' ? 'bg-slate-900 text-white' : 'hover:bg-slate-100'
+              tool === 'eraser' ? 'bg-brand-primary text-white' : 'hover:bg-bg-secondary text-text-secondary'
             }`}
           >
             🧹
           </button>
         </div>
 
-        <div className="w-px h-5 shrink-0 bg-slate-200" />
+        <div className="w-px h-5 shrink-0 bg-border-secondary" />
 
         {/* Color swatches */}
         <div className="flex items-center gap-1 shrink-0">
@@ -261,14 +265,14 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
               }}
               className={`h-5 w-5 rounded-full border-2 transition-transform hover:scale-110 ${
                 color === c && tool === 'pen'
-                  ? 'border-slate-900 scale-110'
+                  ? 'border-brand-primary scale-110'
                   : 'border-transparent'
               }`}
             />
           ))}
         </div>
 
-        <div className="w-px h-5 shrink-0 bg-slate-200" />
+        <div className="w-px h-5 shrink-0 bg-border-secondary" />
 
         {/* Width */}
         <div className="flex items-center gap-1 shrink-0">
@@ -278,8 +282,8 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
               onClick={() => setPenWidth(w.value)}
               className={`rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                 penWidth === w.value
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-brand-primary text-white'
+                  : 'text-text-secondary hover:bg-bg-secondary'
               }`}
             >
               {w.label}
@@ -287,18 +291,18 @@ const Whiteboard = forwardRef(function Whiteboard({ onSendEvent, onClose }, ref)
           ))}
         </div>
 
-        <div className="w-px h-5 shrink-0 bg-slate-200" />
+        <div className="w-px h-5 shrink-0 bg-border-secondary" />
 
         {/* Undo / Clear */}
         <button
           onClick={undo}
-          className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+          className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-text-secondary hover:bg-bg-secondary transition-colors"
         >
           Undo
         </button>
         <button
           onClick={clear}
-          className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+          className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-brand-danger hover:bg-brand-danger/10 transition-colors"
         >
           Clear
         </button>

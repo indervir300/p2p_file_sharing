@@ -8,7 +8,7 @@ export default function DarkModeToggle() {
     <button
       onClick={toggle}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border-secondary dark:border-border-primary bg-bg-primary dark:bg-bg-secondary text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors"
     >
       {isDark ? (
         // Sun icon

@@ -1,30 +1,66 @@
 @import "tailwindcss";
 @import 'highlight.js/styles/atom-one-dark.min.css';
 
-
 /* Class-based dark mode — only activates when .dark is on <html> */
 @variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+  /* Light Theme (GitHub Light Inspired) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eff2f5;
+  --text-primary: #1f2328;
+  --text-secondary: #657d94;
+  --border-primary: #d0d7de;
+  --border-secondary: #d8dee4;
+  --brand-primary: #0969da;
+  --brand-primary-hover: #0860ca;
+  --brand-success: #1a7f37;
+  --brand-warning: #bf8700;
+  --brand-danger: #d1242f;
+  
+  --selection-bg: rgba(9, 105, 218, 0.15);
 }
 
 .dark {
-  --background: #0f172a;
-  --foreground: #f1f5f9;
+  /* Dark Theme (GitHub Dark Inspired) */
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #010409;
+  --text-primary: #c9d1d9;
+  --text-secondary: #8b949e;
+  --border-primary: #30363d;
+  --border-secondary: #21262d;
+  --brand-primary: #2f81f7;
+  --brand-primary-hover: #58a6ff;
+  --brand-success: #238636;
+  --brand-warning: #d29922;
+  --brand-danger: #f85149;
+
+  --selection-bg: rgba(56, 139, 253, 0.15);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-primary: var(--border-primary);
+  --color-border-secondary: var(--border-secondary);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-hover: var(--brand-primary-hover);
+  --color-brand-success: var(--brand-success);
+  --color-brand-warning: var(--brand-warning);
+  --color-brand-danger: var(--brand-danger);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg-primary);
+  color: var(--text-primary);
   font-family: var(--font-geist-sans), 'Segoe UI', sans-serif;
   min-height: 100vh;
 }
@@ -36,7 +72,7 @@ body {
 
 ::-webkit-scrollbar       { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+::-webkit-scrollbar-thumb { background: var(--border-primary); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
-::selection { background: rgba(15,23,42,0.15); color: #0f172a; }
+::selection { background: var(--selection-bg); color: inherit; }

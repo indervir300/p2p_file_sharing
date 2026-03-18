@@ -76,7 +76,7 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
 
   return (
     <div className="rounded-2xl bg-transparent px-1 py-1">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
         Send Queue — drag to reorder
       </p>
       <div className="flex flex-col gap-1">
@@ -96,30 +96,30 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
               draggingIdx === idx
                 ? 'opacity-40'
                 : overIdx === idx
-                ? 'bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700'
-                : 'bg-slate-50 dark:bg-slate-800/90'
+                ? 'bg-brand-primary/10 border border-brand-primary/30'
+                : 'bg-bg-secondary dark:bg-bg-tertiary'
             } ${idx === 0 ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
           >
             {/* Drag handle — hidden for active item */}
             {idx !== 0 && (
-              <svg className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-3.5 w-3.5 shrink-0 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
               </svg>
             )}
 
             {idx === 0 && (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-success shrink-0 animate-pulse" />
             )}
 
-            <span className="truncate flex-1 text-slate-700 dark:text-slate-200">
+            <span className="truncate flex-1 text-text-primary dark:text-text-primary">
               {file.name}
             </span>
-            <span className="shrink-0 text-slate-400 dark:text-slate-500">
+            <span className="shrink-0 text-text-secondary">
               {formatSize(file.size)}
             </span>
 
             {idx === 0 && progress > 0 && (
-              <span className="shrink-0 text-emerald-500 font-medium">
+              <span className="shrink-0 text-brand-success font-medium">
                 {progress}%
               </span>
             )}
@@ -127,7 +127,7 @@ export default function SendQueue({ queue, onReorder, onCancel }) {
             {(idx !== 0 || ['sending', 'receiving', 'paused'].includes(status)) && (
               <button
                 onClick={() => onCancel(msgId)}
-                className="shrink-0 rounded p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="shrink-0 rounded p-0.5 text-text-secondary hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
               >
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

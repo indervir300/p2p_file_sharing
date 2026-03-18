@@ -11,7 +11,7 @@ export default function LinkPreview({ preview, isMine }) {
       className={`mt-2 block rounded-xl overflow-hidden border transition-opacity hover:opacity-90 ${
         isMine
           ? 'border-white/10 bg-white/10'
-          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900'
+          : 'border-border-secondary dark:border-border-primary bg-bg-secondary dark:bg-bg-tertiary'
       }`}
     >
       {image && (
@@ -28,20 +28,20 @@ export default function LinkPreview({ preview, isMine }) {
         )}
         <div className="min-w-0 flex-1">
           <p className={`text-[10px] font-semibold uppercase tracking-wide mb-0.5 truncate ${
-            isMine ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'
+            isMine ? 'text-white/50' : 'text-text-secondary dark:text-text-secondary'
           }`}>
             {siteName}
           </p>
           {title && (
             <p className={`text-xs font-semibold leading-snug line-clamp-2 ${
-              isMine ? 'text-white' : 'text-slate-800 dark:text-slate-100'
+              isMine ? 'text-white' : 'text-text-primary dark:text-text-primary'
             }`}>
               {title}
             </p>
           )}
           {description && (
             <p className={`text-xs mt-0.5 line-clamp-2 leading-snug ${
-              isMine ? 'text-white/50' : 'text-slate-500 dark:text-slate-400'
+              isMine ? 'text-white/50' : 'text-text-secondary dark:text-text-secondary'
             }`}>
               {description}
             </p>

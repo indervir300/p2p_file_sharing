@@ -18,27 +18,27 @@ export default function SessionCode({ mode, code, token, onJoin }) {
   if (mode === 'send') {
     return (
       <>
-        <div className="overflow-hidden rounded-3xl bg-white/95 p-5 shadow-xl shadow-slate-900/10 dark:bg-slate-900/90 sm:p-6">
+        <div className="overflow-hidden rounded-3xl bg-bg-primary/95 p-5 shadow-xl shadow-bg-tertiary/10 dark:bg-bg-secondary/90 sm:p-6">
           <div className="mb-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600 dark:text-blue-400">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-primary">
               Share this code
             </p>
-            <h2 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-              Your meeting is ready
+            <h2 className="mt-1 text-2xl font-semibold text-text-primary dark:text-text-primary">
+              Your session is ready
             </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary">
               Send this code or link to anyone you want to invite.
             </p>
           </div>
 
           {code ? (
             <>
-              <div className="rounded-2xl bg-slate-100/80 p-4 dark:bg-slate-800/80">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  Meeting code
+              <div className="rounded-2xl bg-bg-secondary/80 p-4 dark:bg-bg-tertiary/80">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary dark:text-text-secondary">
+                  Session code
                 </p>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="font-mono text-4xl font-bold leading-none tracking-[0.2em] text-slate-900 dark:text-slate-100 sm:text-5xl">
+                  <p className="font-mono text-4xl font-bold leading-none tracking-[0.2em] text-text-primary dark:text-text-primary sm:text-5xl">
                     {code}
                   </p>
                   <CopyCodeButton code={code} />
@@ -50,9 +50,9 @@ export default function SessionCode({ mode, code, token, onJoin }) {
               </div>
             </>
           ) : (
-            <div className="flex min-h-41 flex-col items-center justify-center gap-3 rounded-2xl bg-slate-100/80 p-6 dark:bg-slate-800/80">
-              <div className="h-8 w-8 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin dark:border-blue-900 dark:border-t-blue-500" />
-              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Creating your meeting code...</span>
+            <div className="flex min-h-41 flex-col items-center justify-center gap-3 rounded-2xl bg-bg-secondary/80 p-6 dark:bg-bg-tertiary/80">
+              <div className="h-8 w-8 rounded-full border-4 border-brand-primary/10 border-t-brand-primary animate-spin" />
+              <span className="text-sm font-medium text-text-secondary dark:text-text-secondary">Creating your session code...</span>
             </div>
           )}
         </div>
@@ -63,9 +63,9 @@ export default function SessionCode({ mode, code, token, onJoin }) {
 
   // Receive mode
   return (
-    <div className="rounded-2xl bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-      <div className="bg-linear-to-r from-blue-600 to-indigo-600 px-5 py-2.5">
-        <p className="text-xs font-bold uppercase tracking-widest text-blue-100 text-center">
+    <div className="rounded-2xl bg-bg-primary dark:bg-bg-secondary shadow-sm overflow-hidden">
+      <div className="bg-brand-primary px-5 py-2.5">
+        <p className="text-xs font-bold uppercase tracking-widest text-white/80 text-center">
           Enter Room Code
         </p>
       </div>
@@ -78,12 +78,12 @@ export default function SessionCode({ mode, code, token, onJoin }) {
           onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
           placeholder="e.g. AB12"
           maxLength={8}
-          className="w-full rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-4 py-4 text-center font-mono text-3xl font-black tracking-widest text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:bg-white dark:focus:border-blue-500 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-600 mb-4"
+          className="w-full rounded-xl border-2 border-border-secondary dark:border-border-primary bg-bg-secondary dark:bg-bg-tertiary px-4 py-4 text-center font-mono text-3xl font-black tracking-widest text-text-primary dark:text-text-primary outline-none focus:border-brand-primary focus:bg-bg-primary dark:focus:border-brand-primary transition-all placeholder:text-text-secondary/30 dark:placeholder:text-text-secondary/30 mb-4"
         />
         <button
           onClick={handleJoin}
           disabled={inputCode.trim().length < 4}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl disabled:scale-100 disabled:opacity-50 disabled:shadow-none active:scale-[0.98]"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-primary py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-brand-primary-hover disabled:scale-100 disabled:opacity-50 disabled:shadow-none active:scale-[0.98]"
         >
           <span>Join Session</span>
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -110,8 +110,8 @@ function CopyCodeButton({ code }) {
       title="Copy code"
       className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold transition-all active:scale-95 ${
         copied
-          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-          : 'bg-blue-600 text-white shadow-md shadow-blue-600/30 hover:bg-blue-700'
+          ? 'bg-brand-success text-white shadow-md shadow-brand-success/30'
+          : 'bg-brand-primary text-white shadow-md shadow-brand-primary/30 hover:bg-brand-primary-hover'
       }`}
     >
       {copied ? 'Copied' : 'Copy code'}
@@ -133,8 +133,8 @@ function CopyLinkButton({ url }) {
       onClick={copy}
       className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all active:scale-[0.97] ${
         copied
-          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/25'
-          : 'bg-linear-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30'
+          ? 'bg-brand-success text-white shadow-md shadow-brand-success/25'
+          : 'bg-brand-primary text-white shadow-md shadow-brand-primary/25 hover:shadow-lg hover:bg-brand-primary-hover'
       }`}
     >
       {copied ? (

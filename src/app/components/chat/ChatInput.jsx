@@ -32,18 +32,18 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
       {/* ── Replying-to banner ─────────────────────────────────────── */}
       {replyingTo && (
         <div className="mb-3 flex items-center gap-3 rounded-2xl bg-transparent px-3 py-2.5">
-          <div className="w-1 self-stretch rounded-full bg-blue-500 shrink-0" />
+          <div className="w-1 self-stretch rounded-full bg-brand-primary shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
               Replying to {replyingTo.sender === 'me' ? 'yourself' : 'Peer'}
             </p>
-            <p className="truncate text-xs text-slate-600 dark:text-slate-300">
+            <p className="truncate text-xs text-text-secondary dark:text-text-secondary">
               {replyingTo.type === 'file' ? `📎 ${replyingTo.name}` : replyingTo.text}
             </p>
           </div>
           <button
             onClick={onCancelReply}
-            className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="shrink-0 rounded-full p-1 text-text-secondary hover:bg-bg-secondary dark:hover:bg-bg-tertiary transition-colors"
             title="Cancel reply"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -54,12 +54,12 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
       )}
 
       {/* ── Input row ─────────────────────────────────────────────── */}
-      <div className="flex items-end gap-2 rounded-[28px] border border-slate-200/90 p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 sm:gap-3 sm:p-2">
+      <div className="flex items-end gap-2 rounded-[28px] border border-border-secondary p-1.5 shadow-sm dark:border-border-primary dark:bg-bg-secondary/60 sm:gap-3 sm:p-2">
 
         <button
           onClick={() => fileRef.current?.click()}
           title="Attach files"
-          className="shrink-0 rounded-2xl p-2.5 text-slate-500 transition-colors hover:bg-slate-200 dark:bg-slate-800/70 dark:text-slate-400 dark:hover:bg-slate-700 sm:p-3"
+          className="shrink-0 rounded-2xl p-2.5 text-text-secondary transition-colors hover:bg-bg-secondary dark:bg-bg-tertiary/70 dark:text-text-secondary dark:hover:bg-bg-tertiary sm:p-3"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -76,14 +76,14 @@ export default function ChatInput({ onSendText, onFilesAttach, onTyping, replyin
           onKeyDown={handleKeyDown}
           placeholder={replyingTo ? 'Write a reply…' : 'Message…'}
           rows={1}
-          className="min-h-12 flex-1 resize-none rounded-2xl border border-transparent bg-transparent px-2 py-2.5 text-sm leading-6 text-slate-800 placeholder-slate-400 outline-none transition-colors focus:border-slate-200/90 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-slate-700 sm:px-3"
+          className="min-h-12 flex-1 resize-none rounded-2xl border border-transparent bg-transparent px-2 py-2.5 text-sm leading-6 text-text-primary placeholder-text-secondary/50 outline-none transition-colors focus:border-border-secondary dark:text-text-primary dark:placeholder-text-secondary/50 dark:focus:border-border-primary sm:px-3"
           style={{ maxHeight: '120px', overflowY: 'auto' }}
         />
 
         <button
           onClick={send}
           title="Send"
-          className="shrink-0 rounded-2xl bg-linear-to-r from-blue-600 to-indigo-600 p-2.5 text-white shadow-lg shadow-blue-500/25 transition-transform hover:scale-[1.03] active:scale-[0.98] sm:p-3"
+          className="shrink-0 rounded-2xl bg-brand-primary p-2.5 text-white shadow-lg shadow-brand-primary/25 transition-transform hover:scale-[1.03] hover:bg-brand-primary-hover active:scale-[0.98] sm:p-3"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
