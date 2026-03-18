@@ -801,16 +801,16 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount
 
-  // Join room when WebSocket connects after session restore
+  // Join room when WebSocket connects after session restore OR WebSocket reconnection
   useEffect(() => {
     if (wsState !== 'connected') return;
-    if (!sessionRestoredRef.current) return;
-    if (status !== 'waiting') return;
     if (!sessionCode) return;
-
-    // Send join - server will recognize this as a reconnection if within grace period
+    
+    // For both initial session restore AND mid-session WebSocket drops,
+    // we must send 'join' to tell the server we are still in this room.
+    // The server will handle it nicely if we're technically already there.
     send({ type: 'join', payload: { code: sessionCode } });
-  }, [wsState, status, sessionCode, send]);
+  }, [wsState, sessionCode, send]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
