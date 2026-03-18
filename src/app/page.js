@@ -806,7 +806,7 @@ export default function Home() {
     if (wsState !== 'connected') return;
     if (!sessionCode) return;
     
-    // For both initial session restore AND mid-session WebSocket drops,
+     // For both initial session restore AND mid-session WebSocket drops,
     // we must send 'join' to tell the server we are still in this room.
     // The server will handle it nicely if we're technically already there.
     send({ type: 'join', payload: { code: sessionCode } });
