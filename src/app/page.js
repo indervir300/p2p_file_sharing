@@ -79,6 +79,67 @@ export default function Home() {
   const audioContextRef = useRef(null);
   const pendingInvitePeerRef = useRef(null);
   const readReceiptsSentRef = useRef(new Set());
+  const sessionRestoredRef = useRef(false);
+  const lastConnectionQualityRef = useRef(null);
+  const cleanupRef = useRef(null);
+
+  // ── Session persistence helpers ─────────────────────────────────────
+  const saveSession = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const sessionData = {
+      sessionCode,
+      roomToken,
+      peerNickname,
+      mode,
+      timestamp: Date.now(),
+    };
+    sessionStorage.setItem('p2p-session', JSON.stringify(sessionData));
+  }, [sessionCode, roomToken, peerNickname, mode]);
+
+  const saveMessages = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    // Save messages without blob data (can't serialize)
+    const serializableMessages = messages.map(m => ({
+      ...m,
+      blob: undefined,
+      file: undefined,
+      previewUrl: m.type === 'file' ? undefined : m.previewUrl,
+    }));
+    sessionStorage.setItem('p2p-messages', JSON.stringify(serializableMessages));
+  }, [messages]);
+
+  const clearSession = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.removeItem('p2p-session');
+    sessionStorage.removeItem('p2p-messages');
+  }, []);
+
+  const getStoredSession = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const data = sessionStorage.getItem('p2p-session');
+      if (!data) return null;
+      const session = JSON.parse(data);
+      // Session expires after 30 minutes
+      if (Date.now() - session.timestamp > 30 * 60 * 1000) {
+        clearSession();
+        return null;
+      }
+      return session;
+    } catch {
+      return null;
+    }
+  }, [clearSession]);
+
+  const getStoredMessages = useCallback(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const data = sessionStorage.getItem('p2p-messages');
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }, []);
 
   // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) =>
@@ -96,7 +157,8 @@ export default function Home() {
 
   const pushToast = useCallback((text, tone = 'info') => {
     const id = genId();
-    setToasts((prev) => [...prev, { id, text, tone }]);
+    // Replace existing toasts instead of stacking - only keep one toast at a time
+    setToasts([{ id, text, tone }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((item) => item.id !== id));
     }, 3200);
@@ -146,6 +208,16 @@ export default function Home() {
         .then((reg) => console.log('SW Registered', reg))
         .catch((err) => console.error('SW Registration Failed', err));
     }
+  }, []);
+
+  // Cleanup AudioContext on unmount
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
   }, []);
 
 
@@ -228,8 +300,16 @@ export default function Home() {
         }
         break;
       case 'joined':
+        // Set sessionCode for joiners (creators already have it from 'created')
+        if (msg.payload?.code) {
+          setSessionCode(msg.payload.code);
+        }
         setStatus('waiting');
         setErrorMsg('');
+        // If this is a reconnection, peer will get 'peer-reconnected' and re-offer
+        if (msg.payload?.isReconnect) {
+          pushToast('Rejoined session! Restoring connection...', 'session');
+        }
         break;
       case 'peer-joined':
         createOffer();
@@ -247,12 +327,36 @@ export default function Home() {
         handleRelayMessageRef.current?.(msg.payload);
         break;
       case 'peer-disconnected':
-        setStatus('waiting');
+        // Clean up old WebRTC connection so we're ready for a new one
+        cleanupRef.current?.();
+        setStatus('idle');
+        setMode(null);
         pendingFilesRef.current = [];
         setQueueVersion((v) => v + 1);
         setPeerTyping(false);
-        addSystemMsg('Peer disconnected. Waiting for reconnect…');
+        setConnectionType(null);
+        setRtcState('idle');
+        setSessionCode('');
+        setRoomToken('');
+        clearSession();
+        pushToast('Peer has left the session.', 'warning');
+        addSystemMsg('Peer disconnected.');
         setErrorMsg('');
+        break;
+      case 'peer-reconnecting':
+        // Peer is temporarily disconnected but may reconnect
+        pushToast(`${msg.payload?.nickname || 'Peer'} is reconnecting...`, 'warning');
+        addSystemMsg('Peer connection interrupted. Waiting for them to reconnect...');
+        // Don't clean up WebRTC yet - they might come back
+        setPeerTyping(false);
+        break;
+      case 'peer-reconnected':
+        // Peer successfully reconnected within grace period
+        pushToast(`${msg.payload?.nickname || 'Peer'} reconnected!`, 'session');
+        addSystemMsg('Peer reconnected!');
+        // Clean up old WebRTC and restart connection
+        cleanupRef.current?.();
+        createOffer();
         break;
       case 'left':
         setStatus('idle');
@@ -260,6 +364,14 @@ export default function Home() {
       case 'error':
         setErrorMsg(msg.payload.message);
         setStatus('error');
+        // Clear stored session if room no longer exists
+        if (msg.payload.message === 'Room not found' || msg.payload.message === 'Room no longer exists') {
+          clearSession();
+          if (sessionRestoredRef.current) {
+            pushToast('Session expired. Please start a new connection.', 'warning');
+            sessionRestoredRef.current = false;
+          }
+        }
         break;
       case 'disconnected':
         setHubId(null); // Force re-identification on reconnect
@@ -288,7 +400,22 @@ export default function Home() {
     }
   }, [hubId, pushToast, playIncomingSound]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { send, wsState } = useSignaling(handleSignal);
+  // ── Signaling connection change handler ─────────────────────────────
+  const handleSignalingConnectionChange = useCallback((state) => {
+    if (state === 'disconnected' && (status === 'connected' || status === 'transferring')) {
+      pushToast('Server connection lost. Reconnecting...', 'warning');
+    } else if (state === 'reconnecting') {
+      // Already handled by the pushToast above
+    } else if (state === 'connected' && sessionRestoredRef.current) {
+      // Reconnected after disconnect - try to rejoin the room
+      const storedSession = getStoredSession();
+      if (storedSession?.sessionCode && status !== 'connected') {
+        pushToast('Reconnected! Rejoining session...', 'session');
+      }
+    }
+  }, [status, pushToast, getStoredSession]);
+
+  const { send, wsState, reconnect } = useSignaling(handleSignal, handleSignalingConnectionChange);
 
   useEffect(() => {
     if (nickname && wsState === 'connected') {
@@ -428,6 +555,43 @@ export default function Home() {
             addSystemMsg('Using server relay — still encrypted 🔒');
         }
       }, 2000);
+
+      // Notify peer reconnection if this was a session restore
+      if (sessionRestoredRef.current) {
+        pushToast('Reconnected to peer!', 'session');
+        sessionRestoredRef.current = false;
+      }
+    },
+
+    // ── Connection quality monitoring ─────────────────────────────────
+    onPeerConnectionQuality: ({ quality }) => {
+      // Avoid duplicate notifications
+      if (lastConnectionQualityRef.current === quality) return;
+      lastConnectionQualityRef.current = quality;
+
+      switch (quality) {
+        case 'unstable':
+          pushToast('Peer connection unstable. Trying to reconnect...', 'warning');
+          addSystemMsg('Connection unstable — attempting recovery...');
+          break;
+        case 'reconnecting':
+          // Don't spam with reconnecting messages
+          break;
+        case 'stable':
+          if (status === 'connected' || status === 'transferring') {
+            // Only notify if we were previously unstable
+            const wasUnstable = lastConnectionQualityRef.current === 'unstable';
+            if (wasUnstable) {
+              pushToast('Connection restored!', 'session');
+            }
+          }
+          break;
+        case 'disconnected':
+          pushToast('Peer connection lost. Switching to relay...', 'warning');
+          break;
+        default:
+          break;
+      }
     },
 
     // ── NEW: connection dropped mid-transfer ──────────────────────
@@ -468,7 +632,6 @@ export default function Home() {
     onChatMessage: ({ text, id, timestamp, replyTo }) => {
       setPeerTyping(false);
       clearTimeout(typingTimeoutRef.current);
-      pushToast('You have a new message.', 'message');
       playIncomingSound();
       const msgId = id || genId();
       addMsg({
@@ -581,6 +744,71 @@ export default function Home() {
   // Keep refs in sync
   useEffect(() => { sendReactionRef.current = sendReaction; }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
+  useEffect(() => { cleanupRef.current = cleanup; }, [cleanup]);
+
+  // ── Session persistence ─────────────────────────────────────────────
+  // Save session data when connected
+  useEffect(() => {
+    if (status === 'connected' && sessionCode) {
+      saveSession();
+    }
+  }, [status, sessionCode, saveSession]);
+
+  // Save messages periodically when connected
+  useEffect(() => {
+    if (status !== 'connected' && status !== 'transferring') return;
+    if (messages.length === 0) return;
+
+    const timer = setTimeout(() => {
+      saveMessages();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [messages, status, saveMessages]);
+
+  // Restore session state on mount (page refresh) - runs once
+  useEffect(() => {
+    if (sessionRestoredRef.current || autoJoinHandled.current) return;
+
+    const storedSession = getStoredSession();
+    if (!storedSession?.sessionCode) return;
+
+    // Mark as handled
+    sessionRestoredRef.current = true;
+
+    // Restore messages first
+    const storedMessages = getStoredMessages();
+    if (storedMessages.length > 0) {
+      setMessages(storedMessages);
+    }
+
+    // Restore session state
+    setSessionCode(storedSession.sessionCode);
+    setRoomToken(storedSession.roomToken || '');
+    setPeerNickname(storedSession.peerNickname || '');
+    setMode(storedSession.mode || 'send');
+    setStatus('waiting');
+
+    // Setup encryption (join will happen in separate effect when wsState is connected)
+    setupDerivedKey(storedSession.sessionCode).catch(() => {
+      setStatus('error');
+      setErrorMsg('Could not restore session encryption.');
+      clearSession();
+      sessionRestoredRef.current = false;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
+  // Join room when WebSocket connects after session restore
+  useEffect(() => {
+    if (wsState !== 'connected') return;
+    if (!sessionRestoredRef.current) return;
+    if (status !== 'waiting') return;
+    if (!sessionCode) return;
+
+    // Send join - server will recognize this as a reconnection if within grace period
+    send({ type: 'join', payload: { code: sessionCode } });
+  }, [wsState, status, sessionCode, send]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
@@ -630,8 +858,8 @@ export default function Home() {
 
   const reset = useCallback(() => {
     leaveRoom();
+    clearSession(); // Clear stored session on manual leave
     setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
-    setLobbyCode('');
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
     setPeerNickname('');
@@ -641,8 +869,10 @@ export default function Home() {
     sendingLoopRunning.current = false;
     currentSendingMsgIdRef.current = null;
     receivingMsgIdRef.current = null;
+    sessionRestoredRef.current = false;
+    lastConnectionQualityRef.current = null;
     clearTimeout(typingTimeoutRef.current);
-  }, [leaveRoom]);
+  }, [leaveRoom, clearSession]);
 
   // ── Send loop ──────────────────────────────────────────────────────
   const runSendLoop = useCallback(async () => {

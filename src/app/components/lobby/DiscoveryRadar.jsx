@@ -1,12 +1,19 @@
 import React, { useMemo } from 'react';
 
 const DiscoveryRadar = ({ peers = [], onConnect, nickname = 'You' }) => {
+  // Helper to safely parse hex from id
+  const safeParseHex = (id, start, end) => {
+    if (!id || typeof id !== 'string' || id.length < Math.abs(end - start)) return 0;
+    const parsed = parseInt(id.slice(start, end), 16);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   // Generate random stable positions for peers if they don't have them
   const peersWithPositions = useMemo(() => {
     return peers.map((peer, index) => {
       // Use index and id hash to create a somewhat stable but "random" orbit
-      const angle = (index * (360 / Math.max(peers.length, 1))) + (parseInt(peer.id.slice(0, 2), 16) % 20);
-      const distance = 35 + (parseInt(peer.id.slice(-2), 16) % 45); // distance from center in %
+      const angle = (index * (360 / Math.max(peers.length, 1))) + (safeParseHex(peer.id, 0, 2) % 20);
+      const distance = 35 + (safeParseHex(peer.id, -2, peer.id?.length) % 45); // distance from center in %
       return { ...peer, angle, distance };
     });
   }, [peers]);

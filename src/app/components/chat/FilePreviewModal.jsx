@@ -44,8 +44,26 @@ export default function FilePreviewModal({ msg, onClose }) {
   const [codeContent, setCodeContent] = useState('');
   const [highlighted, setHighlighted] = useState('');
   const codeRef = useRef(null);
+  const blobUrlRef = useRef(null);
   const kind    = canPreview(msg);
-  const url     = msg.previewUrl || (msg.blob ? URL.createObjectURL(msg.blob) : null);
+
+  // Create object URL only if needed and not already provided
+  const url = msg.previewUrl || (() => {
+    if (msg.blob && !blobUrlRef.current) {
+      blobUrlRef.current = URL.createObjectURL(msg.blob);
+    }
+    return blobUrlRef.current;
+  })();
+
+  // Cleanup object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   // Load code text
   useEffect(() => {
@@ -55,6 +73,9 @@ export default function FilePreviewModal({ msg, onClose }) {
       const ext    = getExt(msg.name);
       const result = hljs.highlightAuto(text, hljs.getLanguage(ext) ? [ext] : undefined);
       setHighlighted(result.value);
+    }).catch((err) => {
+      console.error('Failed to read code content:', err);
+      setCodeContent('Failed to load file content');
     });
   }, [kind, msg.blob, msg.name]);
 

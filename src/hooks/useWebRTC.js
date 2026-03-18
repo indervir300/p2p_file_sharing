@@ -36,6 +36,7 @@ export function useWebRTC({
   onPresence,
   onMessageDelivered, // { msgId }
   onMessageRead,      // { msgId }
+  onPeerConnectionQuality, // { quality: 'stable' | 'unstable' | 'reconnecting' | 'disconnected' }
   encryptChunk,
   decryptChunk,
   wsSend,
@@ -467,7 +468,15 @@ export function useWebRTC({
       console.log('ICE State:', pc.iceConnectionState);
       onStateChange?.(pc.iceConnectionState);
 
+      // Notify about connection quality
+      if (pc.iceConnectionState === 'checking') {
+        onPeerConnectionQuality?.({ quality: 'reconnecting' });
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        onPeerConnectionQuality?.({ quality: 'stable' });
+      }
+
       if (pc.iceConnectionState === 'disconnected') {
+        onPeerConnectionQuality?.({ quality: 'unstable' });
         if (recvTransferRef.current || pendingTransferRef.current) {
           onTransferPaused?.();
           console.log('[Resume] ICE disconnected — transfer paused');
@@ -477,6 +486,7 @@ export function useWebRTC({
           if (pc.iceConnectionState !== 'connected' &&
               pc.iceConnectionState !== 'completed') {
             console.log('[Resume] ICE did not recover — switching to relay');
+            onPeerConnectionQuality?.({ quality: 'reconnecting' });
             isRelayMode.current  = true;
             abortSendRef.current = true;
             onStateChange?.('relay');
@@ -487,6 +497,7 @@ export function useWebRTC({
       }
 
       if (pc.iceConnectionState === 'failed') {
+        onPeerConnectionQuality?.({ quality: 'disconnected' });
         if (recvTransferRef.current || pendingTransferRef.current) {
           onTransferPaused?.();
         }
@@ -503,7 +514,7 @@ export function useWebRTC({
 
     pcRef.current = pc;
     return pc;
-  }, [onSignal, onStateChange, onConnected, onTransferPaused, wsSend]);
+  }, [onSignal, onStateChange, onConnected, onTransferPaused, onPeerConnectionQuality, wsSend]);
 
   const createOffer = useCallback(async () => {
     const pc = createPeerConnection();

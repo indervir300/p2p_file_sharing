@@ -1,18 +1,25 @@
 import React, { useMemo } from 'react';
 
 const DiscoveryNetwork = ({ peers = [], onConnect, nickname = 'You' }) => {
+  // Helper to safely parse hex from id
+  const safeParseHex = (id, start, end) => {
+    if (!id || typeof id !== 'string' || id.length < end) return 0;
+    const parsed = parseInt(id.slice(start, end), 16);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   // Generate random stable positions for peers in a circular layout
   const peersWithPositions = useMemo(() => {
     return peers.map((peer, index) => {
       // Calculate angle ensuring even spacing, plus a little deterministic jitter
       const baseAngle = (index * (360 / Math.max(peers.length, 1)));
-      const jitter = (parseInt(peer.id.slice(0, 2), 16) % 30) - 15;
+      const jitter = (safeParseHex(peer.id, 0, 2) % 30) - 15;
       const angle = baseAngle + jitter;
-      
+
       // Distance from center (radius)
       // Vary radius between 40% and 48%
-      const distance = 40 + (parseInt(peer.id.slice(-2), 16) % 8); 
-      
+      const distance = 40 + (safeParseHex(peer.id, -2, peer.id?.length) % 8);
+
       const rad = (angle - 90) * (Math.PI / 180); // -90 to start from top
       const x = 50 + (distance * Math.cos(rad));
       const y = 50 + (distance * Math.sin(rad));
@@ -87,7 +94,7 @@ const DiscoveryNetwork = ({ peers = [], onConnect, nickname = 'You' }) => {
 
         {/* Peer Nodes */}
         {peersWithPositions.map((peer) => {
-          const delay = parseInt(peer.id.slice(-1), 16) % 3; // 0, 1, or 2 seconds
+          const delay = safeParseHex(peer.id, -1, peer.id?.length) % 3; // 0, 1, or 2 seconds
           
           return (
             <div

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import ReactionPicker from './ReactionPicker';
 import LinkPreview    from './LinkPreview';
 
@@ -14,6 +14,15 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
     longPressTimer.current = setTimeout(() => setShowPicker(true), 600);
   }, []);
   const onTouchEnd = useCallback(() => clearTimeout(longPressTimer.current), []);
+
+  // Cleanup long press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
 
   const startEdit = () => {
     setEditText(msg.text);

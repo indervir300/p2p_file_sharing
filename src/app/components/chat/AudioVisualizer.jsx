@@ -111,6 +111,20 @@ export default function AudioVisualizer({ src, isMine }) {
     stopDraw();
   }, [stopDraw]);
 
+  // Cleanup AudioContext and RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (ctxRef.current) {
+        ctxRef.current.close().catch(() => {});
+        ctxRef.current = null;
+      }
+    };
+  }, []);
+
   // ── Playback controls ──────────────────────────────────────────────
   const toggle = useCallback(async () => {
     const audio = audioRef.current;
