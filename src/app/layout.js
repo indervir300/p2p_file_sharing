@@ -5,14 +5,31 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata = {
-  title: 'P2P FileShare — Encrypted Direct Transfer',
+  title: 'Antigravity — P2P File Sharing',
   description: 'Transfer files directly between devices with end-to-end encryption. No cloud storage, no file size limits.',
   keywords: ['file sharing', 'p2p', 'peer to peer', 'encrypted', 'webrtc'],
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Antigravity',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   openGraph: {
-    title: 'P2P FileShare — Encrypted Direct Transfer',
+    title: 'Antigravity — P2P File Sharing',
     description: 'Transfer files directly between devices with end-to-end encryption. No cloud, no limits.',
     type: 'website',
   },
+};
+
+export const viewport = {
+  themeColor: '#0969da',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }) {

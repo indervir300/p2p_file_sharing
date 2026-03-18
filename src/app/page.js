@@ -1,19 +1,20 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSignaling }  from '@/hooks/useSignaling';
-import { useWebRTC }     from '@/hooks/useWebRTC';
+import { useSignaling } from '@/hooks/useSignaling';
+import { useWebRTC } from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 
-import SessionCode      from '@/app/components/SessionCode';
-import DarkModeToggle   from '@/app/components/ui/DarkModeToggle';
-import FileDropZone     from '@/app/components/FileDropZone';
-import MessageBubble    from '@/app/components/chat/MessageBubble';
-import FileBubble       from '@/app/components/chat/FileBubble';
-import TypingIndicator  from '@/app/components/chat/TypingIndicator';
-import ChatInput        from '@/app/components/chat/ChatInput';
-import SendQueue        from '@/app/components/chat/SendQueue';
-import Whiteboard       from '@/app/components/whiteboard/Whiteboard';
+import SessionCode from '@/app/components/SessionCode';
+import DarkModeToggle from '@/app/components/ui/DarkModeToggle';
+import FileDropZone from '@/app/components/FileDropZone';
+import MessageBubble from '@/app/components/chat/MessageBubble';
+import FileBubble from '@/app/components/chat/FileBubble';
+import TypingIndicator from '@/app/components/chat/TypingIndicator';
+import ChatInput from '@/app/components/chat/ChatInput';
+import SendQueue from '@/app/components/chat/SendQueue';
+import Whiteboard from '@/app/components/whiteboard/Whiteboard';
 import DiscoveryNetwork from '@/app/components/lobby/DiscoveryNetwork';
+import MediaGallery from '@/app/components/chat/MediaGallery';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -34,47 +35,50 @@ function getAvatarColor(name) {
 export default function Home() {
 
   // ── State ──────────────────────────────────────────────────────────
-  const [mode, setMode]                     = useState(null);
-  const [sessionCode, setSessionCode]       = useState('');
-  const [roomToken, setRoomToken]           = useState('');
-  const [status, setStatus]                 = useState('idle');
+  const [mode, setMode] = useState(null);
+  const [sessionCode, setSessionCode] = useState('');
+  const [roomToken, setRoomToken] = useState('');
+  const [status, setStatus] = useState('idle');
   const [connectionType, setConnectionType] = useState(null);
-  const [errorMsg, setErrorMsg]             = useState('');
-  const [messages, setMessages]             = useState([]);
-  const [lightboxUrl, setLightboxUrl]       = useState(null);
-  const [rtcState, setRtcState]             = useState('idle');
-  const [peerTyping, setPeerTyping]         = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [rtcState, setRtcState] = useState('idle');
+  const [peerTyping, setPeerTyping] = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
-  const [replyingTo, setReplyingTo]         = useState(null);
-  const [queueVersion, setQueueVersion]     = useState(0);
-  const [dragDepth, setDragDepth]           = useState(0);
-  const [toasts, setToasts]                 = useState([]);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [queueVersion, setQueueVersion] = useState(0);
+  const [dragDepth, setDragDepth] = useState(0);
+  const [toasts, setToasts] = useState([]);
   const [peerWhiteboardActive, setPeerWhiteboardActive] = useState(false);
   const [peerNickname, setPeerNickname] = useState('');
-  
+
   // ── Discovery State ────────────────────────────────────────────────
-  const [nickname, setNickname]             = useState('');
-  const [hubId, setHubId]                   = useState(null);
-  const [lobbyPeers, setLobbyPeers]         = useState([]);
-  const [isEditingNick, setIsEditingNick]   = useState(false);
+  const [nickname, setNickname] = useState('');
+  const [hubId, setHubId] = useState(null);
+  const [lobbyPeers, setLobbyPeers] = useState([]);
+  const [isEditingNick, setIsEditingNick] = useState(false);
   const [incomingInvite, setIncomingInvite] = useState(null); // { fromNick, roomCode, fromId }
-  const [pendingInvite, setPendingInvite]   = useState(null); // { toNick, toId }
+  const [pendingInvite, setPendingInvite] = useState(null); // { toNick, toId }
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // ── Refs ───────────────────────────────────────────────────────────
-  const cryptoKeyRef           = useRef(null);
-  const autoJoinHandled        = useRef(false);
-  const pendingFilesRef        = useRef([]);
-  const sendingLoopRunning     = useRef(false);
-  const receivingMsgIdRef      = useRef(null);
+  const cryptoKeyRef = useRef(null);
+  const autoJoinHandled = useRef(false);
+  const pendingFilesRef = useRef([]);
+  const sendingLoopRunning = useRef(false);
+  const receivingMsgIdRef = useRef(null);
   const currentSendingMsgIdRef = useRef(null);
-  const chatEndRef             = useRef(null);
-  const typingTimeoutRef       = useRef(null);
-  const handleRelayMessageRef  = useRef(null);
-  const sendReactionRef        = useRef(null);
-  const whiteboardRef          = useRef(null);
-  const audioContextRef        = useRef(null);
-  const pendingInvitePeerRef   = useRef(null);
-  const readReceiptsSentRef        = useRef(new Set());
+  const chatEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const handleRelayMessageRef = useRef(null);
+  const sendReactionRef = useRef(null);
+  const whiteboardRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const pendingInvitePeerRef = useRef(null);
+  const readReceiptsSentRef = useRef(new Set());
 
   // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) =>
@@ -132,6 +136,15 @@ export default function Home() {
       const g = `Explorer-${Math.floor(Math.random() * 9000) + 1000}`;
       setNickname(g);
       localStorage.setItem('p2p-nickname', g);
+    }
+  }, []);
+
+  // Register service worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => console.log('SW Registered', reg))
+        .catch((err) => console.error('SW Registration Failed', err));
     }
   }, []);
 
@@ -201,15 +214,15 @@ export default function Home() {
           setStatus('error');
           setErrorMsg('Could not initialize encryption key. Please retry.');
         });
-        
+
         // If we were trying to invite someone, do it now
         if (pendingInvitePeerRef.current) {
-          send({ 
-            type: 'invite', 
-            payload: { 
-              targetId: pendingInvitePeerRef.current.id, 
-              roomCode: msg.payload.code 
-            } 
+          send({
+            type: 'invite',
+            payload: {
+              targetId: pendingInvitePeerRef.current.id,
+              roomCode: msg.payload.code
+            }
           });
           pendingInvitePeerRef.current = null;
         }
@@ -316,9 +329,9 @@ export default function Home() {
       // but we'll just update the specific one or all previous ones.
       setMessages((prev) => prev.map(m => {
         if (m.sender === 'me' && (m.id === msgId || m.status === 'delivered' || m.status === 'sent')) {
-           // If we get a 'read' for a later message, we can assume earlier ones are read
-           // But let's keep it simple for now: only update the target or if it's older
-           return { ...m, status: 'read' };
+          // If we get a 'read' for a later message, we can assume earlier ones are read
+          // But let's keep it simple for now: only update the target or if it's older
+          return { ...m, status: 'read' };
         }
         return m;
       }));
@@ -371,8 +384,8 @@ export default function Home() {
       receivingMsgIdRef.current = null;
       const previewUrl =
         blob.type?.startsWith('image/') ||
-        blob.type?.startsWith('video/') ||
-        blob.type?.startsWith('audio/')
+          blob.type?.startsWith('video/') ||
+          blob.type?.startsWith('audio/')
           ? URL.createObjectURL(blob)
           : null;
       setMessages((prev) =>
@@ -388,7 +401,7 @@ export default function Home() {
     onConnected: async () => {
       setStatus('connected');
       sendPresenceEvent('identify', { nickname });
-      
+
       // Fallback: Use nickname from invite if not already set
       setPeerNickname((prev) => {
         if (prev) return prev;
@@ -566,14 +579,14 @@ export default function Home() {
   }, [messages, status, sendReadReceipt]);
 
   // Keep refs in sync
-  useEffect(() => { sendReactionRef.current      = sendReaction;      }, [sendReaction]);
+  useEffect(() => { sendReactionRef.current = sendReaction; }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
 
   // ── Auto-join from URL ─────────────────────────────────────────────
   useEffect(() => {
     if (autoJoinHandled.current || wsState !== 'connected') return;
-    const params      = new URLSearchParams(window.location.search);
-    const joinToken   = params.get('join');
+    const params = new URLSearchParams(window.location.search);
+    const joinToken = params.get('join');
     const codeFromUrl = params.get('code');
     if (!joinToken) return;
     autoJoinHandled.current = true;
@@ -586,7 +599,7 @@ export default function Home() {
   }, [wsState, send, setupDerivedKey]);
 
   // ── Room actions ───────────────────────────────────────────────────
-  const startSend    = () => { setErrorMsg(''); setMode('send');    send({ type: 'create' }); };
+  const startSend = () => { setErrorMsg(''); setMode('send'); send({ type: 'create' }); };
 
   const joinRoom = async (code) => {
     setErrorMsg('');
@@ -598,6 +611,17 @@ export default function Home() {
       setErrorMsg('Could not initialize secure connection.');
     }
   };
+
+  const scrollToMessage = useCallback((msgId) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-brand-primary', 'ring-offset-2', 'rounded-2xl', 'transition-all');
+      setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-brand-primary', 'ring-offset-2');
+      }, 2000);
+    }
+  }, []);
 
   const leaveRoom = useCallback(() => {
     send({ type: 'leave' });
@@ -613,10 +637,10 @@ export default function Home() {
     setPeerNickname('');
     setShowWhiteboard(false); setReplyingTo(null); setQueueVersion(0);
     setIncomingInvite(null); setPendingInvite(null);
-    cryptoKeyRef.current           = null;
-    sendingLoopRunning.current     = false;
+    cryptoKeyRef.current = null;
+    sendingLoopRunning.current = false;
     currentSendingMsgIdRef.current = null;
-    receivingMsgIdRef.current      = null;
+    receivingMsgIdRef.current = null;
     clearTimeout(typingTimeoutRef.current);
   }, [leaveRoom]);
 
@@ -642,7 +666,7 @@ export default function Home() {
         }
       }
     } finally {
-      sendingLoopRunning.current     = false;
+      sendingLoopRunning.current = false;
       currentSendingMsgIdRef.current = null;
       if (status !== 'idle') setStatus('connected');
     }
@@ -658,7 +682,7 @@ export default function Home() {
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
-      const id         = genId();
+      const id = genId();
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
       pendingFilesRef.current = [...pendingFilesRef.current, { file, msgId: id }];
       return {
@@ -745,7 +769,7 @@ export default function Home() {
     setMessages((prev) => {
       const queuedIds = arr.map((q) => q.msgId);
       const nonQueued = prev.filter((m) => !queuedIds.includes(m.id));
-      const queued    = queuedIds
+      const queued = queuedIds
         .map((id) => prev.find((m) => m.id === id))
         .filter(Boolean);
       return [...nonQueued, ...queued];
@@ -755,7 +779,7 @@ export default function Home() {
   // ── Link preview ───────────────────────────────────────────────────
   const fetchAndSendLinkPreview = useCallback(async (msgId, text) => {
     const matches = text.match(URL_REGEX);
-    const url     = matches?.[0];
+    const url = matches?.[0];
     if (!url) return;
     try {
       const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`);
@@ -780,12 +804,12 @@ export default function Home() {
       timestamp: Date.now(),
       replyTo: replyingTo
         ? {
-            id:     replyingTo.id,
-            text:   replyingTo.text   || null,
-            name:   replyingTo.name   || null,
-            type:   replyingTo.type,
-            sender: replyingTo.sender,
-          }
+          id: replyingTo.id,
+          text: replyingTo.text || null,
+          name: replyingTo.name || null,
+          type: replyingTo.type,
+          sender: replyingTo.sender,
+        }
         : null,
     });
     setReplyingTo(null);
@@ -848,404 +872,474 @@ export default function Home() {
   // ────────────────────────────────────────────────────────────────────
   return (
     <>
-    <main
-      className="min-h-screen bg-bg-secondary dark:bg-bg-tertiary"
-      onDragEnter={handleDropEnter}
-      onDragLeave={handleDropLeave}
-      onDragOver={handleDropOver}
-      onDrop={handleDropFiles}
-    >
+      <main
+        className="min-h-screen bg-bg-secondary dark:bg-bg-tertiary"
+        onDragEnter={handleDropEnter}
+        onDragLeave={handleDropLeave}
+        onDragOver={handleDropOver}
+        onDrop={handleDropFiles}
+      >
 
-      {/* ══════  CHAT VIEW  ══════ */}
-      {chatReady && (
-        <div className="relative flex h-screen overflow-hidden bg-bg-secondary dark:bg-bg-tertiary">
+        {/* ══════  CHAT VIEW  ══════ */}
+        {chatReady && (
+          <div className="relative flex h-screen overflow-hidden bg-bg-secondary dark:bg-bg-tertiary">
 
 
-          <div
-            className="flex h-screen w-full flex-col overflow-hidden transition-all duration-300  border-l-0"
-          >
+            <div
+              className="flex h-screen w-full flex-col overflow-hidden transition-all duration-300  border-l-0"
+            >
 
-          {/* Header */}
-          <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5 lg:px-6">
-            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-              <button
-                onClick={reset}
-                className="shrink-0 rounded-full border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-primary dark:hover:bg-bg-tertiary sm:px-4"
-              >
-                ← Leave
-              </button>
-              <div className="flex items-center gap-2.5 min-w-0">
-                {/* Avatar */}
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white font-bold shadow-sm ${getAvatarColor(peerNickname)}`}>
-                  {(peerNickname || '?').charAt(0).toUpperCase()}
-                </div>
-                
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <p className="truncate text-sm font-bold text-text-primary dark:text-text-primary sm:text-base">
-                      {peerNickname || 'Connecting...'}
-                    </p>
-                    <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
-                      <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
-                    </span>
-                  </div>
-                  <p className="truncate text-[10px] font-medium text-text-secondary dark:text-text-secondary/60 uppercase tracking-wider leading-none">
-                     {status === 'transferring' ? 'Sending files...' : 'Secure Session'}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                onClick={() => {
-                  setShowWhiteboard(true);
-                  sendWhiteboardEvent({ kind: 'wb-open' });
-                  sendPresenceEvent('whiteboard-open');
-                }}
-                title="Open whiteboard"
-                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${showWhiteboard ? 'ring-2 ring-brand-success/70' : ''} ${peerWhiteboardActive ? 'ring-2 ring-brand-success/70' : ''}`}
-              >
-                {peerWhiteboardActive && !showWhiteboard && (
-                  <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-brand-success animate-pulse" />
-                )}
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M15.232 5.232l3.536 3.536M9 11l6-6 3.536 3.536-6 6H9v-3.536z" />
-                </svg>
-              </button>
-              <DarkModeToggle />
-            </div>
-          </header>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto bg-bg-secondary px-3 py-4 dark:bg-bg-tertiary sm:px-4 sm:py-5 lg:px-6">
-            <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
-              {messages.length === 0 && (
-                <div className="mx-auto mt-8 max-w-md rounded-[28px] px-6 py-8 text-center">
-                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-bg-tertiary text-brand-primary dark:bg-bg-tertiary dark:text-brand-primary">
-                    <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
-                    </svg>
-                  </div>
-                  <p className="text-base font-semibold text-text-primary dark:text-text-primary">
-                    Start a conversation
-                  </p>
-                </div>
-              )}
-
-              {messages.map((msg) => {
-                if (msg.type === 'system') {
-                  return (
-                    <div key={msg.id} className="flex justify-center py-1">
-                      <span className="rounded-full bg-bg-secondary px-3 py-1.5 text-[11px] text-text-secondary dark:bg-bg-secondary dark:text-text-secondary">
-                        {msg.text}
-                      </span>
+              {/* Header */}
+              <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5 lg:px-6">
+                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                  <button
+                    onClick={reset}
+                    className="shrink-0 rounded-full border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-primary dark:hover:bg-bg-tertiary sm:px-4"
+                  >
+                    ← Leave
+                  </button>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* Avatar */}
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white font-bold shadow-sm ${getAvatarColor(peerNickname)}`}>
+                      {(peerNickname || '?').charAt(0).toUpperCase()}
                     </div>
-                  );
-                }
 
-                const isMine = msg.sender === 'me';
-                return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div className="min-w-0 max-w-[84%] sm:max-w-[72%] lg:max-w-[62%]">
-
-                      {msg.type === 'text' && (
-                        <MessageBubble
-                          msg={msg}
-                          isMine={isMine}
-                          onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
-                          onReply={(m) => setReplyingTo(m)}
-                          onEdit={handleEdit}
-                          onDelete={handleDelete}
-                        />
-                      )}
-
-                      {msg.type === 'file' && (
-                        <FileBubble
-                          msg={msg}
-                          isMine={isMine}
-                          onDownload={downloadMsg}
-                          onPreview={(url) => setLightboxUrl(url)}
-                          onCancel={cancelQueuedFile}
-                          onDelete={handleDelete}
-                        />
-                      )}
-
-                      <p className={`mt-1 px-1 text-[10px] font-medium uppercase tracking-[0.18em] text-text-secondary ${isMine ? 'text-right' : 'text-left'}`}>
-                        {new Date(msg.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit', minute: '2-digit',
-                        })}
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className="truncate text-sm font-bold text-text-primary dark:text-text-primary sm:text-base">
+                          {peerNickname || 'Connecting...'}
+                        </p>
+                        <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
+                          <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
+                        </span>
+                      </div>
+                      <p className="truncate text-[10px] font-medium text-text-secondary dark:text-text-secondary/60 uppercase tracking-wider leading-none">
+                        {status === 'transferring' ? 'Sending files...' : 'Secure Session'}
                       </p>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {/* Search Toggle */}
+                  <div className={`flex items-center gap-1.5 transition-all duration-300 overflow-hidden ${isSearchOpen ? 'w-48 sm:w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+                    <input
+                      type="text"
+                      placeholder="Search messages..."
+                      className="w-full rounded-full border border-border-secondary bg-bg-tertiary/50 px-3 py-1 text-sm outline-none focus:border-brand-primary dark:border-border-primary dark:bg-bg-tertiary/30"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
 
-              {peerTyping && <TypingIndicator />}
-              <div ref={chatEndRef} />
-            </div>
-          </div>
+                  <button
+                    onClick={() => {
+                      setIsSearchOpen(!isSearchOpen);
+                      if (isSearchOpen) setSearchQuery('');
+                    }}
+                    title="Search"
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${isSearchOpen ? 'ring-2 ring-brand-primary/70' : ''}`}
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
 
-          {errorMsg && (
-            <div className="shrink-0 border-t border-brand-danger/20 bg-brand-danger/5 px-4 py-2 text-center text-xs text-brand-danger">
-              {errorMsg}
-              <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
-                Dismiss
-              </button>
-            </div>
-          )}
+                  <button
+                    onClick={() => {
+                      setShowWhiteboard(true);
+                      sendWhiteboardEvent({ kind: 'wb-open' });
+                      sendPresenceEvent('whiteboard-open');
+                    }}
+                    title="Open whiteboard"
+                    className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${showWhiteboard ? 'ring-2 ring-brand-success/70' : ''} ${peerWhiteboardActive ? 'ring-2 ring-brand-success/70' : ''}`}
+                  >
+                    {peerWhiteboardActive && !showWhiteboard && (
+                      <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-brand-success animate-pulse" />
+                    )}
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M15.232 5.232l3.536 3.536M9 11l6-6 3.536 3.536-6 6H9v-3.536z" />
+                    </svg>
+                  </button>
 
-          <div className="shrink-0 px-3 py-2 sm:px-4 lg:px-5 bg-bg-secondary dark:bg-bg-tertiary">
-            <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
-              {/* Send queue */}
-              <SendQueue
-                key={queueVersion}
-                queue={pendingFilesRef.current.map(({ file, msgId }) => ({
-                  file, msgId,
-                  status:   messages.find((m) => m.id === msgId)?.status   || 'queued',
-                  progress: messages.find((m) => m.id === msgId)?.progress || 0,
-                }))}
-                onReorder={reorderQueue}
-                onCancel={cancelFileTransfer}
-              />
+                  <button
+                    onClick={() => setShowMediaGallery(!showMediaGallery)}
+                    title="Shared Media"
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${showMediaGallery ? 'ring-2 ring-brand-primary/70' : ''}`}
+                  >
+                    <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  <DarkModeToggle />
+                </div>
+              </header>
 
-              {/* Chat input */}
-              <ChatInput
-                onSendText={handleSendText}
-                onFilesAttach={handleFilesAttach}
-                onTyping={sendTyping}
-                replyingTo={replyingTo}
-                onCancelReply={() => setReplyingTo(null)}
-              />
-            </div>
-          </div>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto bg-bg-secondary px-3 py-4 dark:bg-bg-tertiary sm:px-4 sm:py-5 lg:px-6">
+                <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+                  {messages.length === 0 && (
+                    <div className="mx-auto mt-8 max-w-md rounded-[28px] px-6 py-8 text-center">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-bg-tertiary text-brand-primary dark:bg-bg-tertiary dark:text-brand-primary">
+                        <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
+                        </svg>
+                      </div>
+                      <p className="text-base font-semibold text-text-primary dark:text-text-primary">
+                        Start a conversation
+                      </p>
+                    </div>
+                  )}
 
-          {/* Whiteboard overlay */}
-          {showWhiteboard && (
-            <Whiteboard
-              ref={whiteboardRef}
-              onSendEvent={sendWhiteboardEvent}
-              onClose={() => {
-                setShowWhiteboard(false);
-                sendWhiteboardEvent({ kind: 'wb-close' });
-                sendPresenceEvent('whiteboard-close');
-              }}
-            />
-          )}
-          </div>
+                  {messages
+                .filter(m => {
+                  if (!searchQuery) return true;
+                  if (m.type === 'system') return m.text.toLowerCase().includes(searchQuery.toLowerCase());
+                  return m.text?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         m.name?.toLowerCase().includes(searchQuery.toLowerCase());
+                })
+                .map((msg) => {
+                    if (msg.type === 'system') {
+                      return (
+                        <div key={msg.id} className="flex justify-center py-1">
+                          <span className="rounded-full bg-bg-secondary px-3 py-1.5 text-[11px] text-text-secondary dark:bg-bg-secondary dark:text-text-secondary">
+                            {msg.text}
+                          </span>
+                        </div>
+                      );
+                    }
 
-          {dragDepth > 0 && (
-            <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-bg-tertiary/10 p-5 backdrop-blur-[2px] dark:bg-bg-tertiary/30">
-              <div className="pointer-events-auto w-full max-w-2xl">
-                <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
+                    const isMine = msg.sender === 'me';
+                    const senderName = isMine ? nickname : peerNickname;
+                    
+                    return (
+                      <div key={msg.id} id={`msg-${msg.id}`} className={`flex items-end gap-2.5 ${isMine ? 'flex-row-reverse' : 'flex-row'} scroll-mt-20 px-1`}>
+                        {/* Avatar */}
+                        <div className="shrink-0 mb-5">
+                          <div className={`flex h-4 w-4 items-center justify-center rounded-2xl text-[10px] font-normal text-white shadow-sm ring-2 ring-white/10 transition-transform hover:scale-110 ${
+                            isMine ? 'bg-orange-700' : 'bg-green-800'
+                          }`}>
+                            {(senderName || '?').charAt(0).toUpperCase()}
+                          </div>
+                        </div>
+
+                        <div className={`min-w-0 max-w-[84%] sm:max-w-[72%] lg:max-w-[62%] ${isMine ? 'flex flex-col items-end' : ''}`}>
+                          {msg.type === 'text' && (
+                            <MessageBubble
+                              msg={msg}
+                              isMine={isMine}
+                              onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
+                              onReply={(m) => setReplyingTo(m)}
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                            />
+                          )}
+
+                          {msg.type === 'file' && (
+                            <FileBubble
+                              msg={msg}
+                              isMine={isMine}
+                              onDownload={downloadMsg}
+                              onPreview={(url) => setLightboxUrl(url)}
+                              onCancel={cancelQueuedFile}
+                              onDelete={handleDelete}
+                            />
+                          )}
+
+                          <p className={`mt-1 px-1 text-[10px] font-medium uppercase tracking-[0.18em] text-text-secondary w-full ${isMine ? 'text-right' : 'text-left'}`}>
+                            {new Date(msg.timestamp).toLocaleTimeString([], {
+                              hour: '2-digit', minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {peerTyping && <TypingIndicator />}
+                  <div ref={chatEndRef} />
+                </div>
               </div>
+
+              {errorMsg && (
+                <div className="shrink-0 border-t border-brand-danger/20 bg-brand-danger/5 px-4 py-2 text-center text-xs text-brand-danger">
+                  {errorMsg}
+                  <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              <div className="shrink-0 px-3 py-2 sm:px-4 lg:px-5 bg-bg-secondary dark:bg-bg-tertiary">
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
+                  {/* Send queue */}
+                  <SendQueue
+                    key={queueVersion}
+                    queue={pendingFilesRef.current.map(({ file, msgId }) => ({
+                      file, msgId,
+                      status: messages.find((m) => m.id === msgId)?.status || 'queued',
+                      progress: messages.find((m) => m.id === msgId)?.progress || 0,
+                    }))}
+                    onReorder={reorderQueue}
+                    onCancel={cancelFileTransfer}
+                  />
+
+                  {/* Chat input */}
+                  <ChatInput
+                    onSendText={handleSendText}
+                    onFilesAttach={handleFilesAttach}
+                    onTyping={sendTyping}
+                    replyingTo={replyingTo}
+                    onCancelReply={() => setReplyingTo(null)}
+                  />
+                </div>
+              </div>
+
+              {/* Whiteboard overlay */}
+              {showWhiteboard && (
+                <Whiteboard
+                  ref={whiteboardRef}
+                  onSendEvent={sendWhiteboardEvent}
+                  onClose={() => {
+                    setShowWhiteboard(false);
+                    sendWhiteboardEvent({ kind: 'wb-close' });
+                    sendPresenceEvent('whiteboard-close');
+                  }}
+                />
+              )}
+
             </div>
-          )}
-        </div>
-      )}
 
-      {!chatReady && (
-        <div className="relative flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 w-full flex flex-col p-4 sm:p-6">
+            {dragDepth > 0 && (
+              <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-bg-tertiary/10 p-5 backdrop-blur-[2px] dark:bg-bg-tertiary/30">
+                <div className="pointer-events-auto w-full max-w-2xl">
+                  <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
+                </div>
+              </div>
+            )}
 
-            <div className="flex items-center justify-between">
-              {mode ? (
-                <button
-                  onClick={reset}
-                  className="group inline-flex items-center gap-1.5 rounded-full bg-bg-primary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary dark:hover:text-text-primary"
-                >
-                  <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                  </svg>
-                  Back
-                </button>
-              ) : <div />}
-              <DarkModeToggle />
-            </div>
+            {/* Media Gallery Sidebar - Fixed on Right */}
+            {showMediaGallery && (
+              <>
+                {/* Backdrop Overlay */}
+                <div 
+                  className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] animate-in fade-in duration-300"
+                  onClick={() => setShowMediaGallery(false)}
+                />
+                <div className="fixed inset-y-0 right-0 z-50 flex shadow-2xl w-[450px] max-w-[95vw]">
+                  <MediaGallery 
+                    messages={messages} 
+                    onClose={() => setShowMediaGallery(false)} 
+                    onDownload={downloadMsg}
+                    onScrollTo={scrollToMessage}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
-            {mode !== 'send' ? (
-              <div className="flex flex-col w-full flex-1">
-                <section className="flex flex-col items-center justify-center flex-1">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      {isEditingNick ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            autoFocus
-                            className="rounded-lg border border-border-primary bg-bg-tertiary px-3 py-1.5 text-sm font-semibold text-text-primary outline-none focus:border-brand-primary"
-                            value={nickname}
-                            onChange={(e) => setNickname(e.target.value)}
-                            onBlur={() => {
-                              setIsEditingNick(false);
-                              localStorage.setItem('p2p-nickname', nickname);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
+        {!chatReady && (
+          <div className="relative flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 w-full flex flex-col p-4 sm:p-6">
+
+              <div className="flex items-center justify-between">
+                {mode ? (
+                  <button
+                    onClick={reset}
+                    className="group inline-flex items-center gap-1.5 rounded-full bg-bg-primary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary dark:hover:text-text-primary"
+                  >
+                    <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                    Back
+                  </button>
+                ) : <div />}
+                <DarkModeToggle />
+              </div>
+
+              {mode !== 'send' ? (
+                <div className="flex flex-col w-full flex-1">
+                  <section className="flex flex-col items-center justify-center flex-1">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        {isEditingNick ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              autoFocus
+                              className="rounded-lg border border-border-primary bg-bg-tertiary px-3 py-1.5 text-sm font-semibold text-text-primary outline-none focus:border-brand-primary"
+                              value={nickname}
+                              onChange={(e) => setNickname(e.target.value)}
+                              onBlur={() => {
                                 setIsEditingNick(false);
                                 localStorage.setItem('p2p-nickname', nickname);
-                              }
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <h2 className="text-xl font-bold text-text-primary">
-                          Hi, {nickname}
-                          <button
-                            onClick={() => setIsEditingNick(true)}
-                            className="ml-2 text-xs font-normal text-brand-primary hover:underline"
-                          >
-                            Edit
-                          </button>
-                        </h2>
-                      )}
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setIsEditingNick(false);
+                                  localStorage.setItem('p2p-nickname', nickname);
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <h2 className="text-xl font-bold text-text-primary">
+                            Hi, {nickname}
+                            <button
+                              onClick={() => setIsEditingNick(true)}
+                              className="ml-2 text-xs font-normal text-brand-primary hover:underline"
+                            >
+                              Edit
+                            </button>
+                          </h2>
+                        )}
+                      </div>
+                      <p className="text-sm text-text-secondary">
+                        You are visible on the radar below.
+                      </p>
                     </div>
-                    <p className="text-sm text-text-secondary">
-                      You are visible on the radar below.
+                    {/* Node Network Discovery */}
+                    <DiscoveryNetwork
+                      peers={lobbyPeers}
+                      nickname={nickname}
+                      onConnect={(peer) => {
+                        if (pendingInvite) return;
+                        pushToast(`Inviting ${peer.nickname}...`, 'session');
+                        setPendingInvite({ toNick: peer.nickname, toId: peer.id });
+                        pendingInvitePeerRef.current = peer;
+                        send({ type: 'create' });
+                      }}
+                    />
+                  </section>
+                </div>
+              ) : (
+
+                <div className="mx-auto w-full max-w-md text-center">
+                  <div className="mb-8 flex flex-col items-center">
+                    <div className="relative mb-6">
+                      <div className="h-20 w-20 rounded-full border-4 border-brand-primary/20 border-t-brand-primary animate-spin" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="h-10 w-10 rounded-full bg-brand-primary animate-pulse" />
+                      </div>
+                    </div>
+                    <h1 className="text-2xl font-bold text-text-primary dark:text-text-primary">
+                      {pendingInvite ? `Waiting for ${pendingInvite.toNick}...` : 'Establishing Connection'}
+                    </h1>
+                    <p className="mt-3 text-base text-text-secondary dark:text-text-secondary">
+                      {pendingInvite ? 'Waiting for peer to accept the connection.' : 'Waiting for peer to join the secure session...'}
                     </p>
                   </div>
-                  {/* Node Network Discovery */}
-                  <DiscoveryNetwork
-                    peers={lobbyPeers}
-                    nickname={nickname}
-                    onConnect={(peer) => {
-                      if (pendingInvite) return;
-                      pushToast(`Inviting ${peer.nickname}...`, 'session');
-                      setPendingInvite({ toNick: peer.nickname, toId: peer.id });
-                      pendingInvitePeerRef.current = peer;
-                      send({ type: 'create' });
+
+                  <button
+                    onClick={() => {
+                      if (pendingInvite) {
+                        send({ type: 'invite-cancel', payload: { targetId: pendingInvite.toId } });
+                      }
+                      reset();
                     }}
-                  />
-                </section>
-              </div>
-            ) : (
-
-              <div className="mx-auto w-full max-w-md text-center">
-                <div className="mb-8 flex flex-col items-center">
-                  <div className="relative mb-6">
-                    <div className="h-20 w-20 rounded-full border-4 border-brand-primary/20 border-t-brand-primary animate-spin" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="h-10 w-10 rounded-full bg-brand-primary animate-pulse" />
-                    </div>
-                  </div>
-                  <h1 className="text-2xl font-bold text-text-primary dark:text-text-primary">
-                    {pendingInvite ? `Waiting for ${pendingInvite.toNick}...` : 'Establishing Connection'}
-                  </h1>
-                  <p className="mt-3 text-base text-text-secondary dark:text-text-secondary">
-                    {pendingInvite ? 'Waiting for peer to accept the connection.' : 'Waiting for peer to join the secure session...'}
-                  </p>
+                    className="rounded-full border border-border-secondary px-6 py-2 text-sm font-medium text-text-secondary hover:bg-bg-secondary hover:text-text-primary transition-colors"
+                  >
+                    Cancel Connect
+                  </button>
                 </div>
-                
-                <button
-                  onClick={() => {
-                    if (pendingInvite) {
-                      send({ type: 'invite-cancel', payload: { targetId: pendingInvite.toId } });
-                    }
-                    reset();
-                  }}
-                  className="rounded-full border border-border-secondary px-6 py-2 text-sm font-medium text-text-secondary hover:bg-bg-secondary hover:text-text-primary transition-colors"
-                >
-                  Cancel Connect
-                </button>
-              </div>
-            )}
+              )}
 
-            {errorMsg && (
-              <div className="mt-6 rounded-xl border border-brand-danger/20 bg-brand-danger/5 px-4 py-3 text-center text-sm text-brand-danger dark:border-brand-danger/30 dark:bg-brand-danger/10 dark:text-brand-danger">
-                {errorMsg}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ══════  LIGHTBOX  ══════ */}
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <button
-            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/25 transition-colors"
-            onClick={() => setLightboxUrl(null)}
-            aria-label="Close preview"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <img
-            src={lightboxUrl}
-            alt="Full size preview"
-            className="max-h-[90vh] max-w-full rounded-2xl object-contain shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
-
-      {/* ══════  TOASTS  ══════ */}
-      <div className="pointer-events-none fixed right-4 top-4 z-[60] flex w-[min(92vw,360px)] flex-col gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-bg-tertiary/10 backdrop-blur ${
-              toast.tone === 'message'
-                ? 'border-brand-primary/20 bg-brand-primary/5 text-brand-primary dark:border-brand-primary/30 dark:bg-brand-primary/10 dark:text-brand-primary'
-                : toast.tone === 'navigation'
-                  ? 'border-brand-warning/20 bg-brand-warning/5 text-brand-warning'
-                  : toast.tone === 'session'
-                    ? 'border-brand-success/20 bg-brand-success/5 text-brand-success dark:border-brand-success/30 dark:bg-brand-success/10 dark:text-brand-success'
-                    : 'border-border-secondary bg-bg-primary/95 text-text-primary dark:border-border-primary dark:bg-bg-secondary/95 dark:text-text-primary'
-            }`}
-          >
-            {toast.text}
-          </div>
-        ))}
-      </div>
-
-    </main>
-    
-    {/* Incoming Invite Overlay (Fixed to Viewport) */}
-    {incomingInvite && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="w-full max-w-sm rounded-2xl border border-border-secondary bg-bg-secondary p-6 shadow-xl">
-          <div className="mb-4 flex items-center justify-center">
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-brand-primary/10">
-              <span className="absolute h-full w-full animate-ping rounded-full bg-brand-primary/20" />
-              <svg className="h-8 w-8 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
+              {errorMsg && (
+                <div className="mt-6 rounded-xl border border-brand-danger/20 bg-brand-danger/5 px-4 py-3 text-center text-sm text-brand-danger dark:border-brand-danger/30 dark:bg-brand-danger/10 dark:text-brand-danger">
+                  {errorMsg}
+                </div>
+              )}
             </div>
           </div>
-          <h3 className="text-center text-xl font-bold text-text-primary mb-2">
-            Incoming Connection
-          </h3>
-          <p className="text-center text-sm text-text-secondary mb-6">
-            <strong className="text-text-primary">{incomingInvite.fromNick}</strong> wants to connect with you.
-          </p>
-          <div className="grid grid-cols-2 gap-3">
+        )}
+
+        {/* ══════  LIGHTBOX  ══════ */}
+        {lightboxUrl && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+            onClick={() => setLightboxUrl(null)}
+          >
             <button
-              onClick={() => {
-                send({ type: 'invite-reject', payload: { targetId: incomingInvite.fromId } });
-                setIncomingInvite(null);
-              }}
-              className="rounded-full border border-border-secondary px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-tertiary"
+              className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/25 transition-colors"
+              onClick={() => setLightboxUrl(null)}
+              aria-label="Close preview"
             >
-              Decline
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
-            <button
-              onClick={() => {
-                setMode('receive');
-                joinRoom(incomingInvite.roomCode);
-                setIncomingInvite(null);
-              }}
-              className="rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover shadow-md shadow-brand-primary/20"
+            <img
+              src={lightboxUrl}
+              alt="Full size preview"
+              className="max-h-[90vh] max-w-full rounded-2xl object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+
+        {/* ══════  TOASTS  ══════ */}
+        <div className="pointer-events-none fixed right-4 top-4 z-[60] flex w-[min(92vw,360px)] flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-bg-tertiary/10 backdrop-blur ${toast.tone === 'message'
+                  ? 'border-brand-primary/20 bg-brand-primary/5 text-brand-primary dark:border-brand-primary/30 dark:bg-brand-primary/10 dark:text-brand-primary'
+                  : toast.tone === 'navigation'
+                    ? 'border-brand-warning/20 bg-brand-warning/5 text-brand-warning'
+                    : toast.tone === 'session'
+                      ? 'border-brand-success/20 bg-brand-success/5 text-brand-success dark:border-brand-success/30 dark:bg-brand-success/10 dark:text-brand-success'
+                      : 'border-border-secondary bg-bg-primary/95 text-text-primary dark:border-border-primary dark:bg-bg-secondary/95 dark:text-text-primary'
+                }`}
             >
-              Accept
-            </button>
+              {toast.text}
+            </div>
+          ))}
+        </div>
+
+      </main>
+
+      {/* Incoming Invite Overlay (Fixed to Viewport) */}
+      {incomingInvite && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-2xl border border-border-secondary bg-bg-secondary p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-center">
+              <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-brand-primary/10">
+                <span className="absolute h-full w-full animate-ping rounded-full bg-brand-primary/20" />
+                <svg className="h-8 w-8 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-center text-xl font-bold text-text-primary mb-2">
+              Incoming Connection
+            </h3>
+            <p className="text-center text-sm text-text-secondary mb-6">
+              <strong className="text-text-primary">{incomingInvite.fromNick}</strong> wants to connect with you.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  send({ type: 'invite-reject', payload: { targetId: incomingInvite.fromId } });
+                  setIncomingInvite(null);
+                }}
+                className="rounded-full border border-border-secondary px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-tertiary"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => {
+                  setMode('receive');
+                  joinRoom(incomingInvite.roomCode);
+                  setIncomingInvite(null);
+                }}
+                className="rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover shadow-md shadow-brand-primary/20"
+              >
+                Accept
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
     </>
   );
 }
