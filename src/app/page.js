@@ -13,6 +13,7 @@ import TypingIndicator  from '@/app/components/chat/TypingIndicator';
 import ChatInput        from '@/app/components/chat/ChatInput';
 import SendQueue        from '@/app/components/chat/SendQueue';
 import Whiteboard       from '@/app/components/whiteboard/Whiteboard';
+import DiscoveryNetwork from '@/app/components/lobby/DiscoveryNetwork';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -37,9 +38,16 @@ export default function Home() {
   const [replyingTo, setReplyingTo]         = useState(null);
   const [queueVersion, setQueueVersion]     = useState(0);
   const [dragDepth, setDragDepth]           = useState(0);
-  const [lobbyCode, setLobbyCode]           = useState('');
   const [toasts, setToasts]                 = useState([]);
   const [peerWhiteboardActive, setPeerWhiteboardActive] = useState(false);
+  
+  // ── Discovery State ────────────────────────────────────────────────
+  const [nickname, setNickname]             = useState('');
+  const [hubId, setHubId]                   = useState(null);
+  const [lobbyPeers, setLobbyPeers]         = useState([]);
+  const [isEditingNick, setIsEditingNick]   = useState(false);
+  const [incomingInvite, setIncomingInvite] = useState(null); // { fromNick, roomCode, fromId }
+  const [pendingInvite, setPendingInvite]   = useState(null); // { toNick, toId }
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef           = useRef(null);
@@ -54,6 +62,7 @@ export default function Home() {
   const sendReactionRef        = useRef(null);
   const whiteboardRef          = useRef(null);
   const audioContextRef        = useRef(null);
+  const pendingInvitePeerRef   = useRef(null);
 
   // ── Message helpers ────────────────────────────────────────────────
   const addMsg = useCallback((msg) =>
@@ -102,6 +111,18 @@ export default function Home() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, peerTyping]);
+
+  // Load/Save nickname
+  useEffect(() => {
+    const saved = localStorage.getItem('p2p-nickname');
+    if (saved) setNickname(saved);
+    else {
+      const g = `Explorer-${Math.floor(Math.random() * 9000) + 1000}`;
+      setNickname(g);
+      localStorage.setItem('p2p-nickname', g);
+    }
+  }, []);
+
 
   // ── Crypto ─────────────────────────────────────────────────────────
   const setupDerivedKey = useCallback(async (secret) => {
@@ -168,6 +189,18 @@ export default function Home() {
           setStatus('error');
           setErrorMsg('Could not initialize encryption key. Please retry.');
         });
+        
+        // If we were trying to invite someone, do it now
+        if (pendingInvitePeerRef.current) {
+          send({ 
+            type: 'invite', 
+            payload: { 
+              targetId: pendingInvitePeerRef.current.id, 
+              roomCode: msg.payload.code 
+            } 
+          });
+          pendingInvitePeerRef.current = null;
+        }
         break;
       case 'joined':
         setStatus('waiting');
@@ -203,12 +236,40 @@ export default function Home() {
         setErrorMsg(msg.payload.message);
         setStatus('error');
         break;
+      case 'disconnected':
+        setHubId(null); // Force re-identification on reconnect
+        break;
+      case 'identified':
+        setHubId(msg.payload.hubId);
+        break;
+      case 'lobby-update':
+        setLobbyPeers(msg.payload.peers.filter((p) => p.id !== hubId));
+        break;
+      case 'invited':
+        playIncomingSound();
+        setIncomingInvite(msg.payload);
+        break;
+      case 'invite-rejected':
+        pushToast(`${msg.payload.fromNick} declined your invitation.`, 'warning');
+        setPendingInvite(null);
+        reset();
+        break;
+      case 'invite-cancelled':
+        pushToast(`Invitation from peer was cancelled.`, 'warning');
+        setIncomingInvite(null);
+        break;
       default:
         break;
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hubId, pushToast, playIncomingSound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { send, wsState } = useSignaling(handleSignal);
+
+  useEffect(() => {
+    if (nickname && wsState === 'connected') {
+      send({ type: 'identify', payload: { nickname } });
+    }
+  }, [nickname, wsState, send]);
 
   const {
     createOffer,
@@ -476,19 +537,20 @@ export default function Home() {
     cleanup();
   }, [send, cleanup]);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     leaveRoom();
     setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
     setLobbyCode('');
     pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
     setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
     setShowWhiteboard(false); setReplyingTo(null); setQueueVersion(0);
+    setIncomingInvite(null); setPendingInvite(null);
     cryptoKeyRef.current           = null;
     sendingLoopRunning.current     = false;
     currentSendingMsgIdRef.current = null;
     receivingMsgIdRef.current      = null;
     clearTimeout(typingTimeoutRef.current);
-  };
+  }, [leaveRoom]);
 
   // ── Send loop ──────────────────────────────────────────────────────
   const runSendLoop = useCallback(async () => {
@@ -707,20 +769,11 @@ export default function Home() {
           ? 'bg-brand-primary animate-pulse'
           : 'bg-brand-warning animate-pulse';
 
-  const normalizedLobbyCode = lobbyCode.trim().toUpperCase();
-  const canJoinLobbyCode = normalizedLobbyCode.length >= 4;
-
-  const handleLobbyJoin = async () => {
-    if (!canJoinLobbyCode) return;
-    setMode('receive');
-    setStatus('waiting');
-    await joinRoom(normalizedLobbyCode);
-  };
-
   // ────────────────────────────────────────────────────────────────────
   //  Render
   // ────────────────────────────────────────────────────────────────────
   return (
+    <>
     <main
       className="min-h-screen bg-bg-secondary dark:bg-bg-tertiary"
       onDragEnter={handleDropEnter}
@@ -930,82 +983,88 @@ export default function Home() {
             </div>
 
             {mode !== 'send' ? (
-              <div className="grid gap-8 lg:grid-cols-[0.9fr_1.3fr] lg:items-center">
-                <section>
-                  <h1 className="max-w-xl text-4xl font-semibold leading-tight text-text-primary dark:text-text-primary sm:text-5xl">
-                    Meet, chat, and share files instantly.
-                  </h1>
-
-                  <p className="mt-4 max-w-xl text-base leading-7 text-text-secondary dark:text-text-secondary">
-                    Join with a room code or start a new session to share files and chat securely.
-                  </p>
-                </section>
-
-                <section className="rounded-2xl bg-bg-primary p-6 shadow-sm dark:bg-bg-secondary sm:p-7">
-                  <p className="text-base font-semibold text-text-primary dark:text-text-primary">
-                    Start or join with a code
-                  </p>
-
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                    <button
-                      onClick={startSend}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      New session
-                    </button>
-
-                    <div className="relative flex-1">
-                      <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
-                      </svg>
-                      <input
-                        type="text"
-                        value={lobbyCode}
-                        onChange={(e) => setLobbyCode(e.target.value.toUpperCase())}
-                        onKeyDown={(e) => e.key === 'Enter' && handleLobbyJoin()}
-                        placeholder="Enter a code"
-                        maxLength={12}
-                        className="w-full rounded-full border border-border-primary bg-bg-primary py-3 pl-10 pr-4 text-sm font-medium tracking-wide text-text-primary outline-none transition-colors placeholder:text-text-secondary focus:border-brand-primary dark:border-border-primary dark:bg-bg-tertiary dark:text-text-primary dark:placeholder:text-text-secondary dark:focus:border-brand-primary"
-                      />
+              <div className="flex flex-col w-full max-w-4xl mx-auto">
+                <section className="flex flex-col items-center justify-center min-h-[50vh]">
+                  <div className="mb-6 flex flex-col items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      {isEditingNick ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            autoFocus
+                            className="rounded-lg border border-border-primary bg-bg-tertiary px-3 py-1.5 text-sm font-semibold text-text-primary outline-none focus:border-brand-primary"
+                            value={nickname}
+                            onChange={(e) => setNickname(e.target.value)}
+                            onBlur={() => {
+                              setIsEditingNick(false);
+                              localStorage.setItem('p2p-nickname', nickname);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                setIsEditingNick(false);
+                                localStorage.setItem('p2p-nickname', nickname);
+                              }
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <h2 className="text-xl font-bold text-text-primary">
+                          Hi, {nickname}
+                          <button
+                            onClick={() => setIsEditingNick(true)}
+                            className="ml-2 text-xs font-normal text-brand-primary hover:underline"
+                          >
+                            Edit
+                          </button>
+                        </h2>
+                      )}
                     </div>
-
-                    <button
-                      onClick={handleLobbyJoin}
-                      disabled={!canJoinLobbyCode}
-                      className="rounded-full border border-border-primary px-5 py-3 text-sm font-semibold text-text-primary transition-colors hover:border-border-secondary hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-45 dark:border-border-primary dark:text-text-primary dark:hover:bg-bg-tertiary"
-                    >
-                      Join
-                    </button>
+                    <p className="text-sm text-text-secondary">
+                      You are visible on the radar below.
+                    </p>
                   </div>
-
-                  {mode === 'receive' && status !== 'idle' && (
-                   <div className="mt-5 rounded-xl border border-brand-primary/20 bg-brand-primary/5 px-4 py-3 text-sm text-brand-primary dark:border-brand-primary/30 dark:bg-brand-primary/10 dark:text-brand-primary">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-brand-primary" />
-                        Connecting to room {normalizedLobbyCode || sessionCode || '...'}
-                      </div>
-                    </div>
-                  )}
-
-                  <p className="mt-4 text-xs text-text-secondary dark:text-text-secondary">
-                    Tip: Use the room code shared by your teammate. Codes are case-insensitive.
-                  </p>
+                  {/* Node Network Discovery */}
+                  <DiscoveryNetwork
+                    peers={lobbyPeers}
+                    nickname={nickname}
+                    onConnect={(peer) => {
+                      if (pendingInvite) return;
+                      pushToast(`Inviting ${peer.nickname}...`, 'session');
+                      setPendingInvite({ toNick: peer.nickname, toId: peer.id });
+                      pendingInvitePeerRef.current = peer;
+                      send({ type: 'create' });
+                    }}
+                  />
                 </section>
               </div>
             ) : (
-              <div className="mx-auto w-full max-w-md">
-                <header className="mb-7 text-center">
-                  <h1 className="text-3xl font-bold text-text-primary dark:text-text-primary">
-                    FileShare &amp; Chat
+
+              <div className="mx-auto w-full max-w-md text-center">
+                <div className="mb-8 flex flex-col items-center">
+                  <div className="relative mb-6">
+                    <div className="h-20 w-20 rounded-full border-4 border-brand-primary/20 border-t-brand-primary animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-10 w-10 rounded-full bg-brand-primary animate-pulse" />
+                    </div>
+                  </div>
+                  <h1 className="text-2xl font-bold text-text-primary dark:text-text-primary">
+                    {pendingInvite ? `Waiting for ${pendingInvite.toNick}...` : 'Establishing Connection'}
                   </h1>
-                  <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary">
-                    Share this code to invite others
+                  <p className="mt-3 text-base text-text-secondary dark:text-text-secondary">
+                    {pendingInvite ? 'Waiting for peer to accept the connection.' : 'Waiting for peer to join the secure session...'}
                   </p>
-                </header>
-                <SessionCode mode="send" code={sessionCode} token={roomToken} />
+                </div>
+                
+                <button
+                  onClick={() => {
+                    if (pendingInvite) {
+                      send({ type: 'invite-cancel', payload: { targetId: pendingInvite.toId } });
+                    }
+                    reset();
+                  }}
+                  className="rounded-full border border-border-secondary px-6 py-2 text-sm font-medium text-text-secondary hover:bg-bg-secondary hover:text-text-primary transition-colors"
+                >
+                  Cancel Connect
+                </button>
               </div>
             )}
 
@@ -1067,5 +1126,49 @@ export default function Home() {
       </div>
 
     </main>
+    
+    {/* Incoming Invite Overlay (Fixed to Viewport) */}
+    {incomingInvite && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="w-full max-w-sm rounded-2xl border border-border-secondary bg-bg-secondary p-6 shadow-xl">
+          <div className="mb-4 flex items-center justify-center">
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-brand-primary/10">
+              <span className="absolute h-full w-full animate-ping rounded-full bg-brand-primary/20" />
+              <svg className="h-8 w-8 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </div>
+          </div>
+          <h3 className="text-center text-xl font-bold text-text-primary mb-2">
+            Incoming Connection
+          </h3>
+          <p className="text-center text-sm text-text-secondary mb-6">
+            <strong className="text-text-primary">{incomingInvite.fromNick}</strong> wants to connect with you.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => {
+                send({ type: 'invite-reject', payload: { targetId: incomingInvite.fromId } });
+                setIncomingInvite(null);
+              }}
+              className="rounded-full border border-border-secondary px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-tertiary"
+            >
+              Decline
+            </button>
+            <button
+              onClick={() => {
+                setMode('receive');
+                joinRoom(incomingInvite.roomCode);
+                setIncomingInvite(null);
+              }}
+              className="rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover shadow-md shadow-brand-primary/20"
+            >
+              Accept
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

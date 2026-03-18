@@ -34,8 +34,11 @@
   --brand-primary: #2f81f7;
   --brand-primary-hover: #58a6ff;
   --brand-success: #238636;
+  --brand-success-rgb: 35, 134, 54;
   --brand-warning: #d29922;
   --brand-danger: #f85149;
+
+  --brand-primary-rgb: 47, 129, 247;
 
   --selection-bg: rgba(56, 139, 253, 0.15);
 }
