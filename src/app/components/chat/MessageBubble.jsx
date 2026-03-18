@@ -172,8 +172,8 @@ export default function MessageBubble({ msg, isMine, onReact, onReply, onEdit, o
 
       {/* ── Hover action buttons ─────────────────────────────────────── */}
       {!isEditing && (
-        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-border-secondary bg-bg-primary/95 px-1.5 py-1 shadow-lg shadow-bg-tertiary/8 opacity-0 transition-all group-hover:opacity-100 dark:border-border-primary dark:bg-bg-secondary/95 dark:shadow-bg-tertiary/40
-          ${isMine ? 'left-2 group-hover:-translate-y-1' : 'right-2 group-hover:-translate-y-1'}`}
+        <div className={`absolute -top-3 flex items-center gap-1 rounded-full border border-border-secondary bg-bg-primary/95 px-1.5 py-1 shadow-lg shadow-bg-tertiary/8 lg:opacity-0 transition-all lg:group-hover:opacity-100 dark:border-border-primary dark:bg-bg-secondary/95 dark:shadow-bg-tertiary/40
+          ${isMine ? 'left-2 lg:group-hover:-translate-y-1' : 'right-2 lg:group-hover:-translate-y-1'}`}
         >
           {/* Reply */}
           <button onClick={() => onReply?.(msg)} title="Reply"
