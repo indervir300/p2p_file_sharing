@@ -21,9 +21,7 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
 
   const previewKind    = canPreview(msg);
   const fileSource     = msg.blob || msg.file;
-  const canShowPreview = previewKind &&
-    (fileSource || previewUrl) &&
-    !['sending', 'receiving', 'queued'].includes(status);
+  const canShowPreview = Boolean(previewKind && (fileSource || previewUrl));
 
   const bubble = isMine
     ? 'bg-brand-primary text-white'
