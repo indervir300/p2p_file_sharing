@@ -962,16 +962,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* ══════  LOBBY VIEW  ══════ */}
       {!chatReady && (
-        <div className="relative flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-6xl rounded-3xl bg-bg-primary/90 p-6 shadow-xl shadow-bg-tertiary/5 backdrop-blur dark:bg-bg-secondary/75 lg:p-8">
+        <div className="relative flex flex-1 flex-col overflow-hidden">
+          <div className="flex-1 w-full flex flex-col p-4 sm:p-6">
 
-            <div className="mb-8 flex items-center justify-between">
+            <div className="flex items-center justify-between">
               {mode ? (
                 <button
                   onClick={reset}
-                  className="group inline-flex items-center gap-1.5 rounded-full border border-border-secondary bg-bg-primary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary dark:hover:text-text-primary"
+                  className="group inline-flex items-center gap-1.5 rounded-full bg-bg-primary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary dark:hover:text-text-primary"
                 >
                   <svg className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -983,9 +982,9 @@ export default function Home() {
             </div>
 
             {mode !== 'send' ? (
-              <div className="flex flex-col w-full max-w-4xl mx-auto">
-                <section className="flex flex-col items-center justify-center min-h-[50vh]">
-                  <div className="mb-6 flex flex-col items-center gap-3">
+              <div className="flex flex-col w-full flex-1">
+                <section className="flex flex-col items-center justify-center flex-1">
+                  <div className="flex flex-col items-center gap-3">
                     <div className="flex items-center gap-2">
                       {isEditingNick ? (
                         <div className="flex items-center gap-2">
@@ -1073,10 +1072,6 @@ export default function Home() {
                 {errorMsg}
               </div>
             )}
-
-            <footer className="mt-8 text-center text-xs text-text-secondary">
-              Fast file sharing and chat in one room.
-            </footer>
           </div>
         </div>
       )}

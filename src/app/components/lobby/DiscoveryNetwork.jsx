@@ -28,9 +28,9 @@ const DiscoveryNetwork = ({ peers = [], onConnect, nickname = 'You' }) => {
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center p-8 w-full">
+    <div className="relative flex flex-col items-center justify-center p-4 sm:p-6 w-full flex-1 min-h-0">
       {/* Network Container */}
-      <div className="relative h-72 w-72 sm:h-96 sm:w-96 lg:h-[450px] lg:w-[450px]">
+      <div className="relative h-full w-full max-h-[60vh] sm:max-h-[70vh] lg:max-h-[75vh] aspect-square flex items-center justify-center">
         
         {/* Connection Lines (SVG) */}
         <svg className="absolute inset-0 h-full w-full pointer-events-none" style={{ filter: 'drop-shadow(0 0 4px rgba(var(--brand-primary-rgb), 0.3))' }}>
