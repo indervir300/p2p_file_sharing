@@ -47,10 +47,12 @@ export default function FilePreviewModal({ msg, onClose }) {
   const blobUrlRef = useRef(null);
   const kind    = canPreview(msg);
 
+  const source = msg.blob || msg.file;
+
   // Create object URL only if needed and not already provided
   const url = msg.previewUrl || (() => {
-    if (msg.blob && !blobUrlRef.current) {
-      blobUrlRef.current = URL.createObjectURL(msg.blob);
+    if (source && !blobUrlRef.current) {
+      blobUrlRef.current = URL.createObjectURL(source);
     }
     return blobUrlRef.current;
   })();
@@ -67,8 +69,8 @@ export default function FilePreviewModal({ msg, onClose }) {
 
   // Load code text
   useEffect(() => {
-    if (kind !== 'code' || !msg.blob) return;
-    msg.blob.text().then((text) => {
+    if (kind !== 'code' || !source) return;
+    source.text().then((text) => {
       setCodeContent(text);
       const ext    = getExt(msg.name);
       const result = hljs.highlightAuto(text, hljs.getLanguage(ext) ? [ext] : undefined);
@@ -77,7 +79,7 @@ export default function FilePreviewModal({ msg, onClose }) {
       console.error('Failed to read code content:', err);
       setCodeContent('Failed to load file content');
     });
-  }, [kind, msg.blob, msg.name]);
+  }, [kind, source, msg.name]);
 
   // Lock body scroll
   useEffect(() => {

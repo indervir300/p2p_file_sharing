@@ -915,7 +915,8 @@ export default function Home() {
     if (!files?.length) return;
     const newMsgs = Array.from(files).map((file) => {
       const id = genId();
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+      const isMedia = file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/');
+      const previewUrl = isMedia ? URL.createObjectURL(file) : null;
       pendingFilesRef.current = [...pendingFilesRef.current, { file, msgId: id }];
       return {
         id, type: 'file', sender: 'me',

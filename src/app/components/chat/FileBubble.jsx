@@ -20,8 +20,9 @@ export default function FileBubble({ msg, isMine, onDownload, onPreview, onCance
   const isBusy = status === 'sending' || status === 'receiving';
 
   const previewKind    = canPreview(msg);
+  const fileSource     = msg.blob || msg.file;
   const canShowPreview = previewKind &&
-    (msg.blob || previewUrl) &&
+    (fileSource || previewUrl) &&
     !['sending', 'receiving', 'queued'].includes(status);
 
   const bubble = isMine
