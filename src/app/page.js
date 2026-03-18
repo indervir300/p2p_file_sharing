@@ -1358,7 +1358,7 @@ export default function Home() {
                   className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] animate-in fade-in duration-300"
                   onClick={() => setShowMediaGallery(false)}
                 />
-                <div className="fixed inset-y-0 right-0 z-50 flex shadow-2xl w-[450px] max-w-[95vw]">
+                <div className="fixed inset-y-0 right-0 z-50 flex shadow-2xl w-112.5 max-w-[95vw]">
                   <MediaGallery 
                     messages={messages} 
                     onClose={() => setShowMediaGallery(false)} 
@@ -1521,7 +1521,7 @@ export default function Home() {
         )}
 
         {/* ══════  TOASTS  ══════ */}
-        <div className="pointer-events-none fixed right-4 top-4 z-[60] flex w-[min(92vw,360px)] flex-col gap-2">
+        <div className="pointer-events-none fixed right-4 top-4 z-60 flex w-[min(92vw,360px)] flex-col gap-2">
           {toasts.map((toast) => (
             <div
               key={toast.id}
@@ -1543,7 +1543,7 @@ export default function Home() {
 
       {/* Incoming Invite Overlay (Fixed to Viewport) */}
       {incomingInvite && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-sm rounded-3xl border border-border-secondary bg-bg-secondary p-8 shadow-2xl dark:border-border-primary dark:bg-bg-secondary">
             <div className="mb-6 flex flex-col items-center">
               <div className="relative mb-4">
