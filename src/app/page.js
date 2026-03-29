@@ -3,10 +3,11 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSignaling } from '@/hooks/useSignaling';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
+import { parseDataTransfer, zipFolderEntry } from '@/hooks/useFolderZip';
 
-import SessionCode from '@/app/components/SessionCode';
 import DarkModeToggle from '@/app/components/ui/DarkModeToggle';
 import FileDropZone from '@/app/components/FileDropZone';
+import FolderZipModal from '@/app/components/FolderZipModal';
 import MessageBubble from '@/app/components/chat/MessageBubble';
 import FileBubble from '@/app/components/chat/FileBubble';
 import TypingIndicator from '@/app/components/chat/TypingIndicator';
@@ -63,6 +64,7 @@ export default function Home() {
   const [showMediaGallery, setShowMediaGallery] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [folderZipItems, setFolderZipItems] = useState(null); // null = modal closed
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef = useRef(null);
@@ -950,14 +952,67 @@ export default function Home() {
     event.preventDefault();
   }, [chatReady]);
 
+  // ── Folder zip modal helpers ───────────────────────────────────────
+  /**
+   * Open the modal and begin zipping each folder entry in the background.
+   * Items update from 'zipping' → 'ready' | 'error' independently.
+   */
+  const openFolderZipModal = useCallback((folderEntries) => {
+    const initial = folderEntries.map(({ name }) => ({ name, state: 'zipping' }));
+    setFolderZipItems(initial);
+
+    folderEntries.forEach(({ name, entry }, idx) => {
+      zipFolderEntry(entry, name)
+        .then((zipFile) => {
+          setFolderZipItems((prev) =>
+            prev ? prev.map((item, i) =>
+              i === idx ? { ...item, state: 'ready', zipFile } : item
+            ) : prev
+          );
+        })
+        .catch((err) => {
+          console.error('Zip error:', err);
+          setFolderZipItems((prev) =>
+            prev ? prev.map((item, i) =>
+              i === idx ? { ...item, state: 'error', error: err?.message || 'Failed to zip' } : item
+            ) : prev
+          );
+        });
+    });
+  }, []);
+
+  const handleFolderZipSend = useCallback((zipFile) => {
+    handleFilesAttach([zipFile]);
+    // Remove the sent item; close modal if nothing left
+    setFolderZipItems((prev) => {
+      if (!prev) return null;
+      const remaining = prev.filter((item) => item.zipFile !== zipFile);
+      return remaining.length === 0 ? null : remaining;
+    });
+  }, [handleFilesAttach]);
+
+  const handleFolderZipCancel = useCallback(() => {
+    setFolderZipItems(null);
+  }, []);
+
   const handleDropFiles = useCallback((event) => {
     if (!chatReady) return;
     if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
     event.preventDefault();
+    // Always reset the overlay immediately so it disappears right away
     setDragDepth(0);
-    const files = Array.from(event.dataTransfer?.files || []);
-    if (files.length) handleFilesAttach(files);
-  }, [chatReady, handleFilesAttach]);
+
+    const { plainFiles, folderEntries } = parseDataTransfer(event.dataTransfer);
+
+    // Plain files go straight to the send queue
+    if (plainFiles.length) handleFilesAttach(plainFiles);
+
+    // Folders open a confirmation modal — zip happens in background,
+    // user reviews and clicks Send before it queues
+    if (folderEntries.length > 0) {
+      openFolderZipModal(folderEntries);
+    }
+  }, [chatReady, handleFilesAttach, openFolderZipModal]);
 
   const cancelQueuedFile = useCallback((msgId) => {
     const idx = pendingFilesRef.current.findIndex((x) => x.msgId === msgId);
@@ -1344,11 +1399,34 @@ export default function Home() {
             </div>
 
             {dragDepth > 0 && (
-              <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-bg-tertiary/10 p-5 backdrop-blur-[2px] dark:bg-bg-tertiary/30">
-                <div className="pointer-events-auto w-full max-w-2xl">
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-bg-tertiary/10 p-5 backdrop-blur-[2px] dark:bg-bg-tertiary/30"
+                onDragOver={(e) => e.preventDefault()}
+                onDragLeave={(e) => {
+                  // Only dismiss when truly leaving the viewport
+                  if (e.relatedTarget === null || !document.documentElement.contains(e.relatedTarget)) {
+                    setDragDepth(0);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation(); // Prevent main's onDrop from double-processing
+                  handleDropFiles(e);  // Delegate to main handler which handles both plain files and folder modal
+                }}
+              >
+                <div className="w-full max-w-2xl">
                   <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
                 </div>
               </div>
+            )}
+
+            {/* Folder zip confirmation modal */}
+            {folderZipItems && (
+              <FolderZipModal
+                items={folderZipItems}
+                onSend={handleFolderZipSend}
+                onCancel={handleFolderZipCancel}
+              />
             )}
 
             {/* Media Gallery Sidebar - Fixed on Right */}

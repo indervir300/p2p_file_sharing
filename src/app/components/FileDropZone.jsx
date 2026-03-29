@@ -39,10 +39,9 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
 
   const handleDrop = (e) => {
     e.preventDefault();
-    e.stopPropagation();
+    // Do NOT stopPropagation — let it bubble up to the parent <main> which
+    // has a robust parseDataTransfer logic that handles both plain files and folders.
     setDragging(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    if (files.length > 0 && !disabled) onFilesSelect(files);
   };
 
   if (selectedFile) {
@@ -85,9 +84,9 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
         </svg>
       </div>
       <p className="font-semibold text-text-primary dark:text-text-primary">
-        {dragging ? 'Release to add files to chat' : 'Drop files anywhere in the chat'}
+        {dragging ? 'Release to add to chat' : 'Drop files or folders here'}
       </p>
-      <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary">Browse locally or drag multiple files in one step</p>
+      <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary">Files queue instantly · Folders are auto-zipped 📦</p>
     </div>
   );
 }
