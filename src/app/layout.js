@@ -25,7 +25,7 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: '#0969da',
+  themeColor: '#0a66c2',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -36,7 +36,6 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Runs before hydration — prevents flash of wrong theme */}
         <script dangerouslySetInnerHTML={{ __html: `
           try {
             const t = localStorage.getItem('theme');
