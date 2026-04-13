@@ -9,11 +9,7 @@ function formatSize(bytes) {
 
 /**
  * Modal that appears when a folder is dropped.
- *
- * Props:
- *   items: Array<{ name: string, state: 'zipping' | 'ready' | 'error', zipFile?: File, error?: string }>
- *   onSend(zipFile): called when the user confirms a ready zip
- *   onCancel(): called when user dismisses the whole modal
+ * Shows a simple progress while compressing, then lets the user send.
  */
 export default function FolderZipModal({ items, onSend, onCancel }) {
   if (!items || items.length === 0) return null;
@@ -31,15 +27,19 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-border-secondary dark:border-border-primary">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-primary/10 text-brand-primary text-xl">
-              📦
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-primary/10 text-brand-primary">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
             </div>
             <div>
               <h3 className="font-bold text-text-primary text-base">
-                {items.length === 1 ? 'Folder Detected' : `${items.length} Folders Detected`}
+                {allDone ? 'Ready to send' : 'Preparing...'}
               </h3>
               <p className="text-xs text-text-secondary mt-0.5">
-                {allDone ? 'Ready to send' : 'Compressing folder contents…'}
+                {allDone
+                  ? `${items.length} ${items.length === 1 ? 'item' : 'items'} ready`
+                  : 'Compressing files…'}
               </p>
             </div>
           </div>
@@ -56,10 +56,14 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
                   <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
                 )}
                 {item.state === 'ready' && (
-                  <span className="text-brand-success text-lg">✓</span>
+                  <svg className="h-5 w-5 text-brand-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
                 )}
                 {item.state === 'error' && (
-                  <span className="text-brand-danger text-lg">✗</span>
+                  <svg className="h-5 w-5 text-brand-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 )}
               </div>
 
@@ -71,7 +75,7 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
                 <p className="text-xs text-text-secondary mt-0.5">
                   {item.state === 'zipping' && 'Compressing…'}
                   {item.state === 'ready' && item.zipFile && formatSize(item.zipFile.size)}
-                  {item.state === 'error' && (item.error || 'Failed to zip')}
+                  {item.state === 'error' && (item.error || 'Failed')}
                 </p>
               </div>
 
@@ -97,7 +101,6 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
             Cancel
           </button>
 
-          {/* Single-folder or "Send All" button */}
           {hasReady && (
             <button
               disabled={!allDone}
@@ -112,7 +115,7 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
                   : 'bg-brand-primary/50 cursor-not-allowed'
                 }`}
             >
-              {!allDone ? 'Zipping…' : items.length === 1 ? 'Send ZIP' : 'Send All'}
+              {!allDone ? 'Preparing…' : 'Send'}
             </button>
           )}
         </div>

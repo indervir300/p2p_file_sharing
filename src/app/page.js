@@ -4,24 +4,72 @@ import { useSignaling } from '@/hooks/useSignaling';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { deriveKeyFromSecret, encryptChunk, decryptChunk } from '@/hooks/useCrypto';
 import { parseDataTransfer, zipFolderEntry } from '@/hooks/useFolderZip';
+import { saveBlobToDB, loadBlobFromDB, clearAllBlobsDB } from '@/utils/idb';
 
 import DarkModeToggle from '@/app/components/ui/DarkModeToggle';
 import FileDropZone from '@/app/components/FileDropZone';
 import FolderZipModal from '@/app/components/FolderZipModal';
-import MessageBubble from '@/app/components/chat/MessageBubble';
-import FileBubble from '@/app/components/chat/FileBubble';
-import TypingIndicator from '@/app/components/chat/TypingIndicator';
-import ChatInput from '@/app/components/chat/ChatInput';
-import SendQueue from '@/app/components/chat/SendQueue';
-import Whiteboard from '@/app/components/whiteboard/Whiteboard';
 import DiscoveryNetwork from '@/app/components/lobby/DiscoveryNetwork';
-import MediaGallery from '@/app/components/chat/MediaGallery';
 
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-const URL_REGEX = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function formatSpeed(bytesPerSec) {
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+  if (bytesPerSec < 1024 ** 2) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSec / 1024 ** 2).toFixed(1)} MB/s`;
+}
+
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function MediaPreview({ blob, mimeType, name }) {
+  const [url, setUrl] = useState(null);
+
+  useEffect(() => {
+    if (!blob) return;
+    const objUrl = URL.createObjectURL(blob);
+    setUrl(objUrl);
+    return () => URL.revokeObjectURL(objUrl);
+  }, [blob]);
+
+  if (!url) return null;
+
+  if (mimeType?.startsWith('image/')) {
+    return (
+      <div className="mt-3 overflow-hidden rounded-xl border border-border-secondary/50 dark:border-border-primary/50 shadow-sm max-w-[260px]">
+        <img src={url} alt={name} className="w-full h-auto object-cover max-h-[180px]" loading="lazy" onDragStart={(e) => e.preventDefault()} />
+      </div>
+    );
+  }
+  if (mimeType?.startsWith('video/')) {
+    return (
+      <div className="mt-3 overflow-hidden rounded-xl border border-border-secondary/50 dark:border-border-primary/50 shadow-sm max-w-[260px]">
+        <video src={url} controls className="w-full h-auto max-h-[180px]" />
+      </div>
+    );
+  }
+  if (mimeType?.startsWith('audio/')) {
+    return (
+      <div className="mt-3 w-full max-w-[260px]">
+        <audio src={url} controls className="w-full h-9" />
+      </div>
+    );
+  }
+  return null;
+}
+
 const AVATAR_COLORS = [
   'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500',
   'bg-pink-500', 'bg-indigo-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500'
@@ -42,16 +90,10 @@ export default function Home() {
   const [status, setStatus] = useState('idle');
   const [connectionType, setConnectionType] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [transfers, setTransfers] = useState([]); // file transfer items
   const [rtcState, setRtcState] = useState('idle');
-  const [peerTyping, setPeerTyping] = useState(false);
-  const [showWhiteboard, setShowWhiteboard] = useState(false);
-  const [replyingTo, setReplyingTo] = useState(null);
   const [queueVersion, setQueueVersion] = useState(0);
-  const [dragDepth, setDragDepth] = useState(0);
   const [toasts, setToasts] = useState([]);
-  const [peerWhiteboardActive, setPeerWhiteboardActive] = useState(false);
   const [peerNickname, setPeerNickname] = useState('');
 
   // ── Discovery State ────────────────────────────────────────────────
@@ -59,12 +101,9 @@ export default function Home() {
   const [hubId, setHubId] = useState(null);
   const [lobbyPeers, setLobbyPeers] = useState([]);
   const [isEditingNick, setIsEditingNick] = useState(false);
-  const [incomingInvite, setIncomingInvite] = useState(null); // { fromNick, roomCode, fromId }
-  const [pendingInvite, setPendingInvite] = useState(null); // { toNick, toId }
-  const [showMediaGallery, setShowMediaGallery] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [folderZipItems, setFolderZipItems] = useState(null); // null = modal closed
+  const [incomingInvite, setIncomingInvite] = useState(null);
+  const [pendingInvite, setPendingInvite] = useState(null);
+  const [folderZipItems, setFolderZipItems] = useState(null);
 
   // ── Refs ───────────────────────────────────────────────────────────
   const cryptoKeyRef = useRef(null);
@@ -73,17 +112,17 @@ export default function Home() {
   const sendingLoopRunning = useRef(false);
   const receivingMsgIdRef = useRef(null);
   const currentSendingMsgIdRef = useRef(null);
-  const chatEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
   const handleRelayMessageRef = useRef(null);
-  const sendReactionRef = useRef(null);
-  const whiteboardRef = useRef(null);
   const audioContextRef = useRef(null);
   const pendingInvitePeerRef = useRef(null);
-  const readReceiptsSentRef = useRef(new Set());
   const sessionRestoredRef = useRef(false);
   const lastConnectionQualityRef = useRef(null);
   const cleanupRef = useRef(null);
+  const latestTransfersRef = useRef([]);
+
+  useEffect(() => {
+    latestTransfersRef.current = transfers;
+  }, [transfers]);
 
   // ── Session persistence helpers ─────────────────────────────────────
   const saveSession = useCallback(() => {
@@ -94,26 +133,23 @@ export default function Home() {
       peerNickname,
       mode,
       timestamp: Date.now(),
+      transfers: latestTransfersRef.current.map(({ file, blob, ...t }) => ({ ...t })),
     };
     sessionStorage.setItem('p2p-session', JSON.stringify(sessionData));
   }, [sessionCode, roomToken, peerNickname, mode]);
 
-  const saveMessages = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    // Save messages without blob data (can't serialize)
-    const serializableMessages = messages.map(m => ({
-      ...m,
-      blob: undefined,
-      file: undefined,
-      previewUrl: m.type === 'file' ? undefined : m.previewUrl,
-    }));
-    sessionStorage.setItem('p2p-messages', JSON.stringify(serializableMessages));
-  }, [messages]);
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (sessionCode) saveSession();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [sessionCode, saveSession]);
 
   const clearSession = useCallback(() => {
     if (typeof window === 'undefined') return;
     sessionStorage.removeItem('p2p-session');
-    sessionStorage.removeItem('p2p-messages');
+    clearAllBlobsDB();
   }, []);
 
   const getStoredSession = useCallback(() => {
@@ -122,7 +158,6 @@ export default function Home() {
       const data = sessionStorage.getItem('p2p-session');
       if (!data) return null;
       const session = JSON.parse(data);
-      // Session expires after 30 minutes
       if (Date.now() - session.timestamp > 30 * 60 * 1000) {
         clearSession();
         return null;
@@ -133,33 +168,16 @@ export default function Home() {
     }
   }, [clearSession]);
 
-  const getStoredMessages = useCallback(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const data = sessionStorage.getItem('p2p-messages');
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  }, []);
+  // ── Transfer list helpers ──────────────────────────────────────────
+  const addTransfer = useCallback((item) =>
+    setTransfers((prev) => [...prev, item]), []);
 
-  // ── Message helpers ────────────────────────────────────────────────
-  const addMsg = useCallback((msg) =>
-    setMessages((prev) => [...prev, msg]), []);
-
-  const addSystemMsg = useCallback((text) =>
-    setMessages((prev) => [
-      ...prev,
-      { id: genId(), type: 'system', text, timestamp: Date.now() },
-    ]), []);
-
-  const updateMsg = useCallback((id, updates) =>
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, ...updates } : m))), []);
+  const updateTransfer = useCallback((id, updates) =>
+    setTransfers((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))), []);
 
   const pushToast = useCallback((text, tone = 'info') => {
     const id = genId();
-    // Replace existing toasts instead of stacking - only keep one toast at a time
     setToasts([{ id, text, tone }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((item) => item.id !== id));
@@ -187,10 +205,6 @@ export default function Home() {
       // Ignore browser audio restrictions.
     }
   }, []);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, peerTyping]);
 
   // Load/Save nickname
   useEffect(() => {
@@ -222,7 +236,6 @@ export default function Home() {
     };
   }, []);
 
-
   // ── Crypto ─────────────────────────────────────────────────────────
   const setupDerivedKey = useCallback(async (secret) => {
     cryptoKeyRef.current = await deriveKeyFromSecret(secret);
@@ -238,44 +251,6 @@ export default function Home() {
     return decryptChunk(cryptoKeyRef.current, data);
   }, []);
 
-  // ── Reaction handler ───────────────────────────────────────────────
-  const handleReaction = useCallback((msgId, emoji, fromPeer = false) => {
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== msgId) return m;
-        const reactions = {};
-        Object.entries(m.reactions || {}).forEach(([e, r]) => {
-          reactions[e] = { ...r };
-        });
-
-        if (fromPeer) {
-          Object.keys(reactions).forEach((e) => {
-            if (reactions[e].peer) {
-              reactions[e].peer = false;
-              if (!reactions[e].mine) delete reactions[e];
-            }
-          });
-          if (emoji) reactions[emoji] = { mine: reactions[emoji]?.mine || false, peer: true };
-        } else {
-          const myPrevEmoji = Object.keys(reactions).find((e) => reactions[e].mine);
-          if (myPrevEmoji === emoji) {
-            reactions[emoji].mine = false;
-            if (!reactions[emoji].peer) delete reactions[emoji];
-            sendReactionRef.current?.(msgId, null);
-          } else {
-            if (myPrevEmoji) {
-              reactions[myPrevEmoji].mine = false;
-              if (!reactions[myPrevEmoji].peer) delete reactions[myPrevEmoji];
-            }
-            reactions[emoji] = { mine: true, peer: reactions[emoji]?.peer || false };
-            sendReactionRef.current?.(msgId, emoji);
-          }
-        }
-        return { ...m, reactions };
-      })
-    );
-  }, []);
-
   // ── Signaling ──────────────────────────────────────────────────────
   const handleSignal = useCallback((msg) => {
     switch (msg.type) {
@@ -289,7 +264,6 @@ export default function Home() {
           setErrorMsg('Could not initialize encryption key. Please retry.');
         });
 
-        // If we were trying to invite someone, do it now
         if (pendingInvitePeerRef.current) {
           send({
             type: 'invite',
@@ -302,19 +276,17 @@ export default function Home() {
         }
         break;
       case 'joined':
-        // Set sessionCode for joiners (creators already have it from 'created')
         if (msg.payload?.code) {
           setSessionCode(msg.payload.code);
         }
         setStatus('waiting');
         setErrorMsg('');
-        // If this is a reconnection, peer will get 'peer-reconnected' and re-offer
         if (msg.payload?.isReconnect) {
           pushToast('Rejoined session! Restoring connection...', 'session');
         }
         break;
       case 'peer-joined':
-        setPendingInvite(null); // Clear pending invite as it's accepted
+        setPendingInvite(null);
         if (msg.payload?.nickname) setPeerNickname(msg.payload.nickname);
         createOffer();
         break;
@@ -331,34 +303,24 @@ export default function Home() {
         handleRelayMessageRef.current?.(msg.payload);
         break;
       case 'peer-disconnected':
-        // Clean up old WebRTC connection so we're ready for a new one
         cleanupRef.current?.();
         setStatus('idle');
         setMode(null);
         pendingFilesRef.current = [];
         setQueueVersion((v) => v + 1);
-        setPeerTyping(false);
         setConnectionType(null);
         setRtcState('idle');
         setSessionCode('');
         setRoomToken('');
         clearSession();
         pushToast('Peer has left the session.', 'warning');
-        addSystemMsg('Peer disconnected.');
         setErrorMsg('');
         break;
       case 'peer-reconnecting':
-        // Peer is temporarily disconnected but may reconnect
         pushToast(`${msg.payload?.nickname || 'Peer'} is reconnecting...`, 'warning');
-        addSystemMsg('Peer connection interrupted. Waiting for them to reconnect...');
-        // Don't clean up WebRTC yet - they might come back
-        setPeerTyping(false);
         break;
       case 'peer-reconnected':
-        // Peer successfully reconnected within grace period
         pushToast(`${msg.payload?.nickname || 'Peer'} reconnected!`, 'session');
-        addSystemMsg('Peer reconnected!');
-        // Clean up old WebRTC and restart connection
         cleanupRef.current?.();
         createOffer();
         break;
@@ -368,7 +330,6 @@ export default function Home() {
       case 'error':
         setErrorMsg(msg.payload.message);
         setStatus('error');
-        // Clear stored session if room no longer exists
         if (msg.payload.message === 'Room not found' || msg.payload.message === 'Room no longer exists') {
           clearSession();
           if (sessionRestoredRef.current) {
@@ -378,7 +339,7 @@ export default function Home() {
         }
         break;
       case 'disconnected':
-        setHubId(null); // Force re-identification on reconnect
+        setHubId(null);
         break;
       case 'identified':
         setHubId(msg.payload.hubId);
@@ -408,10 +369,7 @@ export default function Home() {
   const handleSignalingConnectionChange = useCallback((state) => {
     if (state === 'disconnected' && (status === 'connected' || status === 'transferring')) {
       pushToast('Server connection lost. Reconnecting...', 'warning');
-    } else if (state === 'reconnecting') {
-      // Already handled by the pushToast above
     } else if (state === 'connected' && sessionRestoredRef.current) {
-      // Reconnected after disconnect - try to rejoin the room
       const storedSession = getStoredSession();
       if (storedSession?.sessionCode && status !== 'connected') {
         pushToast('Reconnected! Rejoining session...', 'session');
@@ -419,7 +377,7 @@ export default function Home() {
     }
   }, [status, pushToast, getStoredSession]);
 
-  const { send, wsState, reconnect } = useSignaling(handleSignal, handleSignalingConnectionChange);
+  const { send, wsState } = useSignaling(handleSignal, handleSignalingConnectionChange);
 
   useEffect(() => {
     if (nickname && wsState === 'connected') {
@@ -434,15 +392,6 @@ export default function Home() {
     handleIceCandidate,
     sendFile,
     cancelTransfer,
-    sendChatMessage,
-    sendTyping,
-    sendReaction,
-    sendEdit,
-    sendDelete,
-    sendDeliveredReceipt,
-    sendReadReceipt,
-    sendLinkPreview,
-    sendWhiteboardEvent,
     sendPresenceEvent,
     getConnectionInfo,
     cleanup,
@@ -451,42 +400,10 @@ export default function Home() {
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
 
-    onMessageDelivered: ({ msgId }) => {
-      updateMsg(msgId, { status: 'delivered' });
-    },
-
-    onMessageRead: ({ msgId }) => {
-      // All messages up to this point are also implicitly read in many systems, 
-      // but we'll just update the specific one or all previous ones.
-      setMessages((prev) => prev.map(m => {
-        if (m.sender === 'me' && (m.id === msgId || m.status === 'delivered' || m.status === 'sent')) {
-          // If we get a 'read' for a later message, we can assume earlier ones are read
-          // But let's keep it simple for now: only update the target or if it's older
-          return { ...m, status: 'read' };
-        }
-        return m;
-      }));
-    },
-
     onPresence: (message) => {
       switch (message.type) {
-        case 'whiteboard-open':
-          setPeerWhiteboardActive(true);
-          break;
-        case 'whiteboard-close':
-          setPeerWhiteboardActive(false);
-          break;
         case 'identify':
           setPeerNickname(message.nickname || 'Peer');
-          break;
-        case 'page-hidden':
-          pushToast('Peer switched tab or minimized the app.', 'navigation');
-          break;
-        case 'page-visible':
-          pushToast('Peer returned to the app.', 'navigation');
-          break;
-        case 'leaving-page':
-          pushToast('Peer is navigating away.', 'navigation');
           break;
         default:
           break;
@@ -495,35 +412,31 @@ export default function Home() {
 
     onProgress: (p) => {
       const activeId = currentSendingMsgIdRef.current || receivingMsgIdRef.current;
-      if (activeId) updateMsg(activeId, { progress: p.percent });
+      if (activeId) updateTransfer(activeId, { progress: p.percent, speed: p.speed });
     },
 
     onFileMeta: ({ transferId, name, size, type }) => {
       const id = transferId || genId();
       receivingMsgIdRef.current = id;
-      addMsg({
-        id, type: 'file', sender: 'peer',
+      addTransfer({
+        id, sender: 'peer',
         name, size, mimeType: type,
         status: 'receiving', progress: 0,
         timestamp: Date.now(),
       });
-      sendDeliveredReceipt(id);
     },
 
-    onFileReceived: ({ blob }) => {
+    onFileReceived: async ({ blob }) => {
       const msgId = receivingMsgIdRef.current;
       receivingMsgIdRef.current = null;
-      const previewUrl =
-        blob.type?.startsWith('image/') ||
-          blob.type?.startsWith('video/') ||
-          blob.type?.startsWith('audio/')
-          ? URL.createObjectURL(blob)
-          : null;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? { ...m, blob, previewUrl, status: 'received', progress: 100 }
-            : m
+      if (blob && msgId) {
+        await saveBlobToDB(msgId, blob);
+      }
+      setTransfers((prev) =>
+        prev.map((t) =>
+          t.id === msgId
+            ? { ...t, blob, status: 'received', progress: 100 }
+            : t
         )
       );
       setStatus('connected');
@@ -533,57 +446,45 @@ export default function Home() {
       setStatus('connected');
       sendPresenceEvent('identify', { nickname });
 
-      // Fallback: Use nickname from invite if not already set
       setPeerNickname((prev) => {
         if (prev) return prev;
         if (pendingInvite) return pendingInvite.toNick;
         if (incomingInvite) return incomingInvite.fromNick;
         return prev;
       });
-      // Restore paused file messages back to active states
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.type !== 'file') return m;
-          if (m.status === 'paused' && m.sender === 'me')
-            return { ...m, status: 'sending' };
-          if (m.status === 'paused' && m.sender === 'peer')
-            return { ...m, status: 'receiving' };
-          return m;
+      // Restore paused transfers
+      setTransfers((prev) =>
+        prev.map((t) => {
+          if (t.status === 'paused' && t.sender === 'me')
+            return { ...t, status: 'sending' };
+          if (t.status === 'paused' && t.sender === 'peer')
+            return { ...t, status: 'receiving' };
+          return t;
         })
       );
       setTimeout(async () => {
         const info = await getConnectionInfo();
         if (info) {
           setConnectionType(info);
-          if (info.type === 'relay')
-            addSystemMsg('Using server relay — still encrypted 🔒');
         }
       }, 2000);
 
-      // Notify peer reconnection if this was a session restore
       if (sessionRestoredRef.current) {
         pushToast('Reconnected to peer!', 'session');
         sessionRestoredRef.current = false;
       }
     },
 
-    // ── Connection quality monitoring ─────────────────────────────────
     onPeerConnectionQuality: ({ quality }) => {
-      // Avoid duplicate notifications
       if (lastConnectionQualityRef.current === quality) return;
       lastConnectionQualityRef.current = quality;
 
       switch (quality) {
         case 'unstable':
-          pushToast('Peer connection unstable. Trying to reconnect...', 'warning');
-          addSystemMsg('Connection unstable — attempting recovery...');
-          break;
-        case 'reconnecting':
-          // Don't spam with reconnecting messages
+          pushToast('Connection unstable. Trying to reconnect...', 'warning');
           break;
         case 'stable':
           if (status === 'connected' || status === 'transferring') {
-            // Only notify if we were previously unstable
             const wasUnstable = lastConnectionQualityRef.current === 'unstable';
             if (wasUnstable) {
               pushToast('Connection restored!', 'session');
@@ -598,23 +499,20 @@ export default function Home() {
       }
     },
 
-    // ── NEW: connection dropped mid-transfer ──────────────────────
     onTransferPaused: () => {
-      // Mark the active sending message as paused
       if (currentSendingMsgIdRef.current) {
-        updateMsg(currentSendingMsgIdRef.current, { status: 'paused' });
+        updateTransfer(currentSendingMsgIdRef.current, { status: 'paused' });
       }
-      // Mark the active receiving message as paused
       if (receivingMsgIdRef.current) {
-        updateMsg(receivingMsgIdRef.current, { status: 'paused' });
+        updateTransfer(receivingMsgIdRef.current, { status: 'paused' });
       }
-      addSystemMsg('Transfer paused — reconnecting… ⏸');
+      pushToast('Transfer paused — reconnecting… ⏸', 'warning');
     },
 
     onTransferError: (message) => {
       setErrorMsg(message);
       if (receivingMsgIdRef.current) {
-        updateMsg(receivingMsgIdRef.current, { status: 'error' });
+        updateTransfer(receivingMsgIdRef.current, { status: 'error' });
         receivingMsgIdRef.current = null;
       }
       setStatus('connected');
@@ -622,178 +520,68 @@ export default function Home() {
 
     onTransferCanceled: ({ transferId, sender }) => {
       if (!transferId) return;
-      updateMsg(transferId, { status: 'canceled', progress: 0 });
+      updateTransfer(transferId, { status: 'canceled', progress: 0 });
       if (sender === 'peer' && receivingMsgIdRef.current === transferId) {
         receivingMsgIdRef.current = null;
       }
       if (sender === 'me' && currentSendingMsgIdRef.current === transferId) {
         currentSendingMsgIdRef.current = null;
       }
-      addSystemMsg(sender === 'me' ? 'Upload canceled.' : 'Incoming file canceled by peer.');
       setStatus('connected');
-    },
-
-    onChatMessage: ({ text, id, timestamp, replyTo }) => {
-      setPeerTyping(false);
-      clearTimeout(typingTimeoutRef.current);
-      playIncomingSound();
-      const msgId = id || genId();
-      addMsg({
-        id: msgId, type: 'text', sender: 'peer',
-        text, timestamp: timestamp || Date.now(),
-        replyTo: replyTo || null,
-      });
-      sendDeliveredReceipt(msgId);
-      if (document.visibilityState === 'visible') {
-        sendReadReceipt(msgId);
-        readReceiptsSentRef.current.add(msgId);
-      }
-    },
-
-    onTyping: () => {
-      setPeerTyping(true);
-      clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => setPeerTyping(false), 2500);
-    },
-
-    onReaction: ({ msgId, emoji, fromPeer }) => {
-      handleReaction(msgId, emoji, fromPeer);
-    },
-
-    onWhiteboardEvent: (event) => {
-      if (event?.kind === 'wb-open') setPeerWhiteboardActive(true);
-      if (event?.kind === 'wb-close') setPeerWhiteboardActive(false);
-      whiteboardRef.current?.handlePeerEvent(event);
-    },
-
-    onMessageEdit: ({ id, newText }) => {
-      setMessages((prev) =>
-        prev.map((m) => m.id === id ? { ...m, text: newText, edited: true } : m)
-      );
-    },
-
-    onMessageDelete: ({ id }) => {
-      setMessages((prev) =>
-        prev.map((m) => m.id === id ? { ...m, deleted: true } : m)
-      );
-    },
-
-    onLinkPreview: ({ msgId, preview }) => {
-      setMessages((prev) =>
-        prev.map((m) => m.id === msgId ? { ...m, linkPreview: preview } : m)
-      );
     },
 
     onStateChange: (state) => {
       setRtcState(state);
-      if (state === 'relay')
-        addSystemMsg('Direct P2P failed — switching to secure relay 🔄');
-      else if (state === 'failed' || state === 'disconnected')
-        addSystemMsg(`Connection ${state}. Switching to relay...`);
     },
 
     encryptChunk: encryptFn,
     decryptChunk: decryptFn,
   });
 
-
-  useEffect(() => {
-    if (showWhiteboard) setPeerWhiteboardActive(false);
-  }, [showWhiteboard]);
-
-  useEffect(() => {
-    const isChatReady = status === 'connected' || status === 'transferring';
-    if (!isChatReady) return;
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        sendPresenceEvent('page-hidden');
-      } else {
-        sendPresenceEvent('page-visible');
-      }
-    };
-
-    const onPageLeave = () => {
-      sendPresenceEvent('leaving-page');
-    };
-
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pagehide', onPageLeave);
-    window.addEventListener('beforeunload', onPageLeave);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pagehide', onPageLeave);
-      window.removeEventListener('beforeunload', onPageLeave);
-    };
-  }, [status, sendPresenceEvent]);
-
-  // Send read receipts when window becomes visible
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && (status === 'connected' || status === 'transferring')) {
-        // Find unread peer messages and send read receipts
-        messages.forEach((m) => {
-          if (m.sender === 'peer' && !readReceiptsSentRef.current.has(m.id)) {
-            sendReadReceipt(m.id);
-            readReceiptsSentRef.current.add(m.id);
-          }
-        });
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, [messages, status, sendReadReceipt]);
-
   // Keep refs in sync
-  useEffect(() => { sendReactionRef.current = sendReaction; }, [sendReaction]);
   useEffect(() => { handleRelayMessageRef.current = handleRelayMessage; }, [handleRelayMessage]);
   useEffect(() => { cleanupRef.current = cleanup; }, [cleanup]);
 
   // ── Session persistence ─────────────────────────────────────────────
-  // Save session data when connected
   useEffect(() => {
     if (status === 'connected' && sessionCode) {
       saveSession();
     }
   }, [status, sessionCode, saveSession]);
 
-  // Save messages periodically when connected
-  useEffect(() => {
-    if (status !== 'connected' && status !== 'transferring') return;
-    if (messages.length === 0) return;
-
-    const timer = setTimeout(() => {
-      saveMessages();
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [messages, status, saveMessages]);
-
-  // Restore session state on mount (page refresh) - runs once
+  // Restore session state on mount
   useEffect(() => {
     if (sessionRestoredRef.current || autoJoinHandled.current) return;
 
     const storedSession = getStoredSession();
     if (!storedSession?.sessionCode) return;
 
-    // Mark as handled
     sessionRestoredRef.current = true;
 
-    // Restore messages first
-    const storedMessages = getStoredMessages();
-    if (storedMessages.length > 0) {
-      setMessages(storedMessages);
-    }
-
-    // Restore session state
     setSessionCode(storedSession.sessionCode);
     setRoomToken(storedSession.roomToken || '');
     setPeerNickname(storedSession.peerNickname || '');
     setMode(storedSession.mode || 'send');
     setStatus('waiting');
 
-    // Setup encryption (join will happen in separate effect when wsState is connected)
+    if (storedSession.transfers) {
+      const restored = storedSession.transfers.map((t) => {
+        if (['sending', 'receiving', 'queued', 'paused'].includes(t.status)) {
+          return { ...t, status: 'error', progress: 0 };
+        }
+        return t;
+      });
+      setTransfers(restored);
+
+      // Restore blobs from IDB for received files
+      restored.filter(t => t.status === 'received').forEach(async (t) => {
+        const blob = await loadBlobFromDB(t.id);
+        if (blob) {
+          setTransfers(prev => prev.map(existing => existing.id === t.id ? { ...existing, blob } : existing));
+        }
+      });
+    }
+
     setupDerivedKey(storedSession.sessionCode).catch(() => {
       setStatus('error');
       setErrorMsg('Could not restore session encryption.');
@@ -801,16 +589,12 @@ export default function Home() {
       sessionRestoredRef.current = false;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, []);
 
-  // Join room when WebSocket connects after session restore OR WebSocket reconnection
+  // Join room when WebSocket connects after session restore
   useEffect(() => {
     if (wsState !== 'connected') return;
     if (!sessionCode) return;
-    
-     // For both initial session restore AND mid-session WebSocket drops,
-    // we must send 'join' to tell the server we are still in this room.
-    // The server will handle it nicely if we're technically already there.
     send({ type: 'join', payload: { code: sessionCode } });
   }, [wsState, sessionCode, send]);
 
@@ -844,17 +628,6 @@ export default function Home() {
     }
   };
 
-  const scrollToMessage = useCallback((msgId) => {
-    const el = document.getElementById(`msg-${msgId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-brand-primary', 'ring-offset-2', 'rounded-2xl', 'transition-all');
-      setTimeout(() => {
-        el.classList.remove('ring-2', 'ring-brand-primary', 'ring-offset-2');
-      }, 2000);
-    }
-  }, []);
-
   const leaveRoom = useCallback(() => {
     send({ type: 'leave' });
     cleanup();
@@ -862,12 +635,12 @@ export default function Home() {
 
   const reset = useCallback(() => {
     leaveRoom();
-    clearSession(); // Clear stored session on manual leave
+    clearSession();
     setMode(null); setStatus('idle'); setSessionCode(''); setRoomToken('');
-    pendingFilesRef.current = []; setMessages([]); setErrorMsg('');
-    setConnectionType(null); setRtcState('idle'); setPeerTyping(false);
+    pendingFilesRef.current = []; setTransfers([]); setErrorMsg('');
+    setConnectionType(null); setRtcState('idle');
     setPeerNickname('');
-    setShowWhiteboard(false); setReplyingTo(null); setQueueVersion(0);
+    setQueueVersion(0);
     setIncomingInvite(null); setPendingInvite(null);
     cryptoKeyRef.current = null;
     sendingLoopRunning.current = false;
@@ -875,7 +648,6 @@ export default function Home() {
     receivingMsgIdRef.current = null;
     sessionRestoredRef.current = false;
     lastConnectionQualityRef.current = null;
-    clearTimeout(typingTimeoutRef.current);
   }, [leaveRoom, clearSession]);
 
   // ── Send loop ──────────────────────────────────────────────────────
@@ -884,79 +656,82 @@ export default function Home() {
     sendingLoopRunning.current = true;
     try {
       while (pendingFilesRef.current.length > 0) {
-        const { file, msgId } = pendingFilesRef.current[0];
+        
+        let targetIdx = -1;
+        for (let i = 0; i < pendingFilesRef.current.length; i++) {
+          const mId = pendingFilesRef.current[i].msgId;
+          const t = latestTransfersRef.current.find(x => x.id === mId);
+          if (t && ['queued', 'sending'].includes(t.status)) {
+            targetIdx = i;
+            break;
+          }
+        }
+
+        if (targetIdx === -1) break; // no actionable files
+        
+        const { file, msgId } = pendingFilesRef.current[targetIdx];
+        
         currentSendingMsgIdRef.current = msgId;
-        updateMsg(msgId, { status: 'sending', progress: 0 });
+        updateTransfer(msgId, { status: 'sending', progress: 0 });
         setStatus('transferring');
-        await sendFile(file, msgId);
-        // sendFile returns when either done OR paused (for resume)
-        // Only advance queue if fully sent (status will be 'sent' via onProgress 100%)
-        const msgNow = pendingFilesRef.current[0]; // might have changed
-        if (msgNow?.msgId === msgId) {
-          currentSendingMsgIdRef.current = null;
-          pendingFilesRef.current.shift();
+
+        const completed = await sendFile(file, msgId);
+
+        if (completed) {
+          const finishIdx = pendingFilesRef.current.findIndex(x => x.msgId === msgId);
+          if (finishIdx > -1) pendingFilesRef.current.splice(finishIdx, 1);
           setQueueVersion((v) => v + 1);
-          updateMsg(msgId, { status: 'sent', progress: 100 });
+          updateTransfer(msgId, { status: 'sent', progress: 100 });
+        } else {
+          // It was paused/canceled/error. Check latest status to determine if we continue loop.
+          const tCheck = latestTransfersRef.current.find(x => x.id === msgId);
+          if (tCheck && tCheck.status === 'paused') {
+            // Keep it in pendingFilesRef, but we continue the loop to find next queued file
+            currentSendingMsgIdRef.current = null;
+          } else {
+             // Hard failure, stop queue
+             break;
+          }
         }
       }
     } finally {
       sendingLoopRunning.current = false;
       currentSendingMsgIdRef.current = null;
-      if (status !== 'idle') setStatus('connected');
+      setStatus((prev) => prev === 'idle' ? 'idle' : 'connected');
     }
-  }, [sendFile, updateMsg, status]);
+  }, [sendFile, updateTransfer]);
 
   useEffect(() => {
     if (status === 'connected' && pendingFilesRef.current.length > 0) runSendLoop();
   }, [status, runSendLoop]);
 
-  const chatReady = status === 'connected' || status === 'transferring';
+  const isConnected = status === 'connected' || status === 'transferring';
 
   // ── File attach ────────────────────────────────────────────────────
   const handleFilesAttach = useCallback((files) => {
     if (!files?.length) return;
-    const newMsgs = Array.from(files).map((file) => {
+    const newItems = Array.from(files).map((file) => {
       const id = genId();
-      const isMedia = file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/');
-      const previewUrl = isMedia ? URL.createObjectURL(file) : null;
       pendingFilesRef.current = [...pendingFilesRef.current, { file, msgId: id }];
       return {
-        id, type: 'file', sender: 'me',
+        id, sender: 'me',
         name: file.name, size: file.size, mimeType: file.type,
-        file, previewUrl, status: 'queued', progress: 0,
+        file, status: 'queued', progress: 0,
         timestamp: Date.now(),
       };
     });
-    setMessages((prev) => [...prev, ...newMsgs]);
+    setTransfers((prev) => [...prev, ...newItems]);
     setQueueVersion((v) => v + 1);
     if (status === 'connected') runSendLoop();
   }, [status, runSendLoop]);
 
-  const handleDropEnter = useCallback((event) => {
-    if (!chatReady) return;
+  const handleDragOver = useCallback((event) => {
+    if (!isConnected) return;
     if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
     event.preventDefault();
-    setDragDepth((depth) => depth + 1);
-  }, [chatReady]);
-
-  const handleDropLeave = useCallback((event) => {
-    if (!chatReady) return;
-    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
-    event.preventDefault();
-    setDragDepth((depth) => Math.max(0, depth - 1));
-  }, [chatReady]);
-
-  const handleDropOver = useCallback((event) => {
-    if (!chatReady) return;
-    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
-    event.preventDefault();
-  }, [chatReady]);
+  }, [isConnected]);
 
   // ── Folder zip modal helpers ───────────────────────────────────────
-  /**
-   * Open the modal and begin zipping each folder entry in the background.
-   * Items update from 'zipping' → 'ready' | 'error' independently.
-   */
   const openFolderZipModal = useCallback((folderEntries) => {
     const initial = folderEntries.map(({ name }) => ({ name, state: 'zipping' }));
     setFolderZipItems(initial);
@@ -983,7 +758,6 @@ export default function Home() {
 
   const handleFolderZipSend = useCallback((zipFile) => {
     handleFilesAttach([zipFile]);
-    // Remove the sent item; close modal if nothing left
     setFolderZipItems((prev) => {
       if (!prev) return null;
       const remaining = prev.filter((item) => item.zipFile !== zipFile);
@@ -996,23 +770,18 @@ export default function Home() {
   }, []);
 
   const handleDropFiles = useCallback((event) => {
-    if (!chatReady) return;
+    if (!isConnected) return;
     if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
     event.preventDefault();
-    // Always reset the overlay immediately so it disappears right away
-    setDragDepth(0);
 
     const { plainFiles, folderEntries } = parseDataTransfer(event.dataTransfer);
 
-    // Plain files go straight to the send queue
     if (plainFiles.length) handleFilesAttach(plainFiles);
 
-    // Folders open a confirmation modal — zip happens in background,
-    // user reviews and clicks Send before it queues
     if (folderEntries.length > 0) {
       openFolderZipModal(folderEntries);
     }
-  }, [chatReady, handleFilesAttach, openFolderZipModal]);
+  }, [isConnected, handleFilesAttach, openFolderZipModal]);
 
   const cancelQueuedFile = useCallback((msgId) => {
     const idx = pendingFilesRef.current.findIndex((x) => x.msgId === msgId);
@@ -1021,14 +790,14 @@ export default function Home() {
       pendingFilesRef.current.splice(idx, 1);
       setQueueVersion((v) => v + 1);
     }
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setTransfers((prev) => prev.filter((t) => t.id !== msgId));
   }, [status]);
 
   const cancelFileTransfer = useCallback((msgId) => {
-    const message = messages.find((item) => item.id === msgId);
-    if (!message) return;
+    const item = transfers.find((t) => t.id === msgId);
+    if (!item) return;
 
-    if (message.status === 'queued') {
+    if (item.status === 'queued') {
       cancelQueuedFile(msgId);
       return;
     }
@@ -1036,16 +805,16 @@ export default function Home() {
     const canceled = cancelTransfer(msgId);
     if (!canceled) return;
 
-    if (message.sender === 'me') {
-      pendingFilesRef.current = pendingFilesRef.current.filter((item) => item.msgId !== msgId);
+    if (item.sender === 'me') {
+      pendingFilesRef.current = pendingFilesRef.current.filter((x) => x.msgId !== msgId);
       currentSendingMsgIdRef.current = currentSendingMsgIdRef.current === msgId ? null : currentSendingMsgIdRef.current;
     } else {
       receivingMsgIdRef.current = receivingMsgIdRef.current === msgId ? null : receivingMsgIdRef.current;
     }
 
     setQueueVersion((v) => v + 1);
-    updateMsg(msgId, { status: 'canceled', progress: 0 });
-  }, [cancelQueuedFile, cancelTransfer, messages, updateMsg]);
+    updateTransfer(msgId, { status: 'canceled', progress: 0 });
+  }, [cancelQueuedFile, cancelTransfer, transfers, updateTransfer]);
 
   // ── Reorder queue ──────────────────────────────────────────────────
   const reorderQueue = useCallback((fromIdx, toIdx) => {
@@ -1054,97 +823,27 @@ export default function Home() {
     arr.splice(toIdx, 0, moved);
     pendingFilesRef.current = arr;
     setQueueVersion((v) => v + 1);
-    setMessages((prev) => {
-      const queuedIds = arr.map((q) => q.msgId);
-      const nonQueued = prev.filter((m) => !queuedIds.includes(m.id));
-      const queued = queuedIds
-        .map((id) => prev.find((m) => m.id === id))
-        .filter(Boolean);
-      return [...nonQueued, ...queued];
-    });
   }, []);
-
-  // ── Link preview ───────────────────────────────────────────────────
-  const fetchAndSendLinkPreview = useCallback(async (msgId, text) => {
-    const matches = text.match(URL_REGEX);
-    const url = matches?.[0];
-    if (!url) return;
-    try {
-      const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`);
-      if (!res.ok) return;
-      const preview = await res.json();
-      if (preview.error) return;
-      setMessages((prev) =>
-        prev.map((m) => m.id === msgId ? { ...m, linkPreview: preview } : m)
-      );
-      sendLinkPreview(msgId, preview);
-    } catch { /* silent */ }
-  }, [sendLinkPreview]);
-
-  // ── Send text ──────────────────────────────────────────────────────
-  const handleSendText = useCallback((text) => {
-    if (!text) return;
-    const id = sendChatMessage?.(text, replyingTo);
-    if (id === false || !id) return;
-    addMsg({
-      id, type: 'text', sender: 'me', text,
-      status: 'sent', // Initial status for double ticks
-      timestamp: Date.now(),
-      replyTo: replyingTo
-        ? {
-          id: replyingTo.id,
-          text: replyingTo.text || null,
-          name: replyingTo.name || null,
-          type: replyingTo.type,
-          sender: replyingTo.sender,
-        }
-        : null,
-    });
-    setReplyingTo(null);
-    fetchAndSendLinkPreview(id, text);
-  }, [sendChatMessage, addMsg, replyingTo, fetchAndSendLinkPreview]);
-
-  // ── Edit ───────────────────────────────────────────────────────────
-  const handleEdit = useCallback((msgId, newText) => {
-    setMessages((prev) =>
-      prev.map((m) => m.id === msgId ? { ...m, text: newText, edited: true } : m)
-    );
-    sendEdit(msgId, newText);
-  }, [sendEdit]);
-
-  // ── Delete ─────────────────────────────────────────────────────────
-  const handleDelete = useCallback((msgId) => {
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== msgId) return m;
-        // Revoke URL if exists
-        if (m.previewUrl) URL.revokeObjectURL(m.previewUrl);
-        return { ...m, deleted: true, blob: null, previewUrl: null };
-      })
-    );
-    sendDelete(msgId);
-  }, [sendDelete]);
 
   // ── Download ───────────────────────────────────────────────────────
-  const downloadMsg = useCallback((msg) => {
-    const url = msg.previewUrl || (msg.blob ? URL.createObjectURL(msg.blob) : null);
+  const downloadFile = useCallback((item) => {
+    const url = item.blob ? URL.createObjectURL(item.blob) : null;
     if (!url) return;
     const a = document.createElement('a');
-    a.href = url; a.download = msg.name; a.click();
-    if (msg.blob && !msg.previewUrl) setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }, []);
+    a.href = url; a.download = item.name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    updateTransfer(item.id, { downloaded: true });
+  }, [updateTransfer]);
 
   const connectionLabel = connectionType?.type === 'relay'
-    ? 'Connected via relay'
+    ? 'Relay (encrypted)'
     : connectionType
-      ? 'Connected directly'
+      ? 'Direct P2P'
       : status === 'transferring'
         ? 'Transferring'
         : status === 'connected'
           ? 'Connected'
-          : status === 'error'
-            ? 'Connection error'
-            : 'Connecting';
+          : 'Connecting';
 
   const connectionDotClass =
     status === 'error'
@@ -1155,6 +854,21 @@ export default function Home() {
           ? 'bg-brand-primary animate-pulse'
           : 'bg-brand-warning animate-pulse';
 
+  // Separate queued, active (sending/receiving), and completed transfers
+  const activeTransfers = transfers.filter((t) =>
+    ['sending', 'receiving', 'paused'].includes(t.status)
+  );
+  const queuedTransfers = pendingFilesRef.current
+    .filter((q) => {
+      const t = transfers.find((t) => t.id === q.msgId);
+      return t && t.status === 'queued';
+    })
+    .map((q) => transfers.find((t) => t.id === q.msgId))
+    .filter(Boolean);
+  const completedTransfers = transfers.filter((t) =>
+    ['sent', 'received', 'canceled', 'error'].includes(t.status)
+  );
+
   // ────────────────────────────────────────────────────────────────────
   //  Render
   // ────────────────────────────────────────────────────────────────────
@@ -1162,263 +876,278 @@ export default function Home() {
     <>
       <main
         className="min-h-screen bg-bg-secondary dark:bg-bg-tertiary"
-        onDragEnter={handleDropEnter}
-        onDragLeave={handleDropLeave}
-        onDragOver={handleDropOver}
+        onDragOver={handleDragOver}
         onDrop={handleDropFiles}
       >
 
-        {/* ══════  CHAT VIEW  ══════ */}
-        {chatReady && (
-          <div className="relative flex h-screen overflow-hidden bg-bg-secondary dark:bg-bg-tertiary">
+        {/* ══════  CONNECTED → FILE TRANSFER VIEW  ══════ */}
+        {isConnected && (
+          <div className="flex h-screen flex-col overflow-hidden bg-bg-secondary dark:bg-bg-tertiary">
 
-
-            <div
-              className="flex h-screen w-full flex-col overflow-hidden transition-all duration-300  border-l-0"
-            >
-
-              {/* Header */}
-              <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5 lg:px-6">
-                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                  <button
-                    onClick={reset}
-                    className="shrink-0 rounded-full border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-primary dark:hover:bg-bg-tertiary sm:px-4"
-                  >
-                    ← Leave
-                  </button>
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Avatar */}
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white font-bold shadow-sm ${getAvatarColor(peerNickname)}`}>
-                      {(peerNickname || '?').charAt(0).toUpperCase()}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <p className="truncate text-sm font-bold text-text-primary dark:text-text-primary sm:text-base">
-                          {peerNickname || 'Connecting...'}
-                        </p>
-                        <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
-                          <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
-                        </span>
-                      </div>
-                      <p className="truncate text-[10px] font-medium text-text-secondary dark:text-text-secondary/60 uppercase tracking-wider leading-none">
-                        {status === 'transferring' ? 'Sending files...' : 'Secure Session'}
+            {/* Header */}
+            <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5 lg:px-6 border-b border-border-secondary dark:border-border-primary">
+              <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                <button
+                  onClick={reset}
+                  className="shrink-0 rounded-full border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-primary dark:hover:bg-bg-tertiary sm:px-4"
+                >
+                  ← Leave
+                </button>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white font-bold shadow-sm ${getAvatarColor(peerNickname)}`}>
+                    {(peerNickname || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-bold text-text-primary dark:text-text-primary sm:text-base">
+                        {peerNickname || 'Connecting...'}
                       </p>
+                      <span className="inline-flex items-center" title={connectionLabel} aria-label={connectionLabel}>
+                        <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
+                      </span>
                     </div>
+                    <p className="truncate text-[10px] font-medium text-text-secondary dark:text-text-secondary/60 uppercase tracking-wider leading-none">
+                      {connectionLabel} · End-to-end encrypted 🔒
+                    </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {/* Search Toggle */}
-                  <div className={`flex items-center gap-1.5 transition-all duration-300 overflow-hidden ${isSearchOpen ? 'w-48 sm:w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
-                    <input
-                      type="text"
-                      placeholder="Search messages..."
-                      className="w-full rounded-full border border-border-secondary bg-bg-tertiary/50 px-3 py-1 text-sm outline-none focus:border-brand-primary dark:border-border-primary dark:bg-bg-tertiary/30"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
+              </div>
+              <DarkModeToggle />
+            </header>
 
-                  <button
-                    onClick={() => {
-                      setIsSearchOpen(!isSearchOpen);
-                      if (isSearchOpen) setSearchQuery('');
-                    }}
-                    title="Search"
-                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${isSearchOpen ? 'ring-2 ring-brand-primary/70' : ''}`}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
+            {/* Main content - centered when empty */}
+            <div className={`flex-1 overflow-y-auto px-3 py-5 sm:px-4 lg:px-6 flex flex-col ${transfers.length === 0 ? 'justify-center' : ''}`}>
+              <div className="mx-auto w-full max-w-3xl flex flex-col gap-5">
 
-                  <button
-                    onClick={() => {
-                      setShowWhiteboard(true);
-                      sendWhiteboardEvent({ kind: 'wb-open' });
-                      sendPresenceEvent('whiteboard-open');
-                    }}
-                    title="Open whiteboard"
-                    className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${showWhiteboard ? 'ring-2 ring-brand-success/70' : ''} ${peerWhiteboardActive ? 'ring-2 ring-brand-success/70' : ''}`}
-                  >
-                    {peerWhiteboardActive && !showWhiteboard && (
-                      <span className="pointer-events-none absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-brand-success animate-pulse" />
-                    )}
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                        d="M15.232 5.232l3.536 3.536M9 11l6-6 3.536 3.536-6 6H9v-3.536z" />
-                    </svg>
-                  </button>
+                {/* Drop Zone */}
+                <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
 
-                  <button
-                    onClick={() => setShowMediaGallery(!showMediaGallery)}
-                    title="Shared Media"
-                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-primary text-text-secondary transition-colors hover:bg-bg-secondary dark:border-border-primary dark:bg-bg-secondary dark:text-text-secondary dark:hover:bg-bg-tertiary ${showMediaGallery ? 'ring-2 ring-brand-primary/70' : ''}`}
-                  >
-                    <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </button>
-                  <DarkModeToggle />
-                </div>
-              </header>
-
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto bg-bg-secondary px-3 py-4 dark:bg-bg-tertiary sm:px-4 sm:py-5 lg:px-6">
-                <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
-                  {messages.length === 0 && (
-                    <div className="mx-auto mt-8 max-w-md rounded-[28px] px-6 py-8 text-center">
-                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-bg-tertiary text-brand-primary dark:bg-bg-tertiary dark:text-brand-primary">
-                        <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
-                        </svg>
-                      </div>
-                      <p className="text-base font-semibold text-text-primary dark:text-text-primary">
-                        Start a conversation
-                      </p>
-                    </div>
-                  )}
-
-                  {messages
-                .filter(m => {
-                  if (!searchQuery) return true;
-                  if (m.type === 'system') return m.text.toLowerCase().includes(searchQuery.toLowerCase());
-                  return m.text?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         m.name?.toLowerCase().includes(searchQuery.toLowerCase());
-                })
-                .map((msg) => {
-                    if (msg.type === 'system') {
-                      return (
-                        <div key={msg.id} className="flex justify-center py-1">
-                          <span className="rounded-full bg-bg-secondary px-3 py-1.5 text-[11px] text-text-secondary dark:bg-bg-secondary dark:text-text-secondary">
-                            {msg.text}
-                          </span>
+                {/* Send Queue */}
+                {queuedTransfers.length > 0 && (
+                  <div className="rounded-2xl border border-border-secondary dark:border-border-primary bg-bg-primary dark:bg-bg-secondary p-4">
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
+                      Queue — {queuedTransfers.length} file{queuedTransfers.length > 1 ? 's' : ''} waiting
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {queuedTransfers.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center gap-3 rounded-xl bg-bg-secondary dark:bg-bg-tertiary px-3 py-2.5"
+                        >
+                          <div className="shrink-0 rounded-lg bg-bg-tertiary dark:bg-bg-secondary p-2">
+                            <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-text-primary">{item.name}</p>
+                            <p className="text-xs text-text-secondary">{formatSize(item.size)}</p>
+                          </div>
+                          <button
+                            onClick={() => cancelQueuedFile(item.id)}
+                            className="shrink-0 rounded-full p-1.5 text-text-secondary hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         </div>
-                      );
-                    }
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                    const isMine = msg.sender === 'me';
-                    const senderName = isMine ? nickname : peerNickname;
-                    
-                    return (
-                      <div key={msg.id} id={`msg-${msg.id}`} className={`flex items-end gap-2.5 ${isMine ? 'flex-row-reverse' : 'flex-row'} scroll-mt-20 px-1`}>
-                        {/* Avatar */}
-                        <div className="shrink-0 mb-5">
-                          <div className={`flex h-4 w-4 items-center justify-center rounded-2xl text-[10px] font-normal text-white shadow-sm ring-2 ring-white/10 transition-transform hover:scale-110 ${
-                            isMine ? 'bg-orange-700' : 'bg-green-800'
-                          }`}>
-                            {(senderName || '?').charAt(0).toUpperCase()}
+                {/* Active Transfers */}
+                {activeTransfers.length > 0 && (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary px-1">
+                      Active Transfers
+                    </p>
+                    {activeTransfers.map((item) => {
+                      const isMine = item.sender === 'me';
+                      return (
+                        <div
+                          key={item.id}
+                          className={`rounded-2xl border overflow-hidden transition-all ${
+                            item.status === 'paused'
+                              ? 'border-brand-warning/30 bg-brand-warning/5'
+                              : 'border-brand-primary/20 bg-bg-primary dark:bg-bg-secondary'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 px-4 py-3">
+                            <div className={`shrink-0 rounded-xl p-2.5 ${isMine ? 'bg-brand-primary/10' : 'bg-brand-success/10'}`}>
+                              <svg className={`h-5 w-5 ${isMine ? 'text-brand-primary' : 'text-brand-success'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                {isMine ? (
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                ) : (
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M7 10l5 5m0 0l5-5m-5 5V3" />
+                                )}
+                              </svg>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-text-primary">{item.name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-text-secondary">{formatSize(item.size)}</span>
+                                <span className="text-xs text-text-secondary">·</span>
+                                <span className={`text-xs font-medium ${item.status === 'paused' ? 'text-brand-warning' : 'text-brand-primary'}`}>
+                                  {item.status === 'paused' ? 'Paused' : `${item.progress || 0}%`}
+                                </span>
+                                {item.speed > 0 && (
+                                  <>
+                                    <span className="text-xs text-text-secondary">·</span>
+                                    <span className="text-xs text-text-secondary">{formatSpeed(item.speed)}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => cancelFileTransfer(item.id)}
+                              className="shrink-0 rounded-full p-1.5 text-text-secondary hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="px-4 pb-3">
+                            <div className={`h-1.5 rounded-full overflow-hidden ${item.status === 'paused' ? 'bg-brand-warning/20' : 'bg-brand-primary/10'}`}>
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${item.status === 'paused' ? 'bg-brand-warning' : 'bg-brand-primary'}`}
+                                style={{ width: `${item.progress || 0}%` }}
+                              />
+                            </div>
                           </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-                        <div className={`min-w-0 max-w-[84%] sm:max-w-[72%] lg:max-w-[62%] ${isMine ? 'flex flex-col items-end' : ''}`}>
-                          {msg.type === 'text' && (
-                            <MessageBubble
-                              msg={msg}
-                              isMine={isMine}
-                              onReact={(msgId, emoji) => handleReaction(msgId, emoji, false)}
-                              onReply={(m) => setReplyingTo(m)}
-                              onEdit={handleEdit}
-                              onDelete={handleDelete}
-                            />
+                {/* Completed Transfers */}
+                {completedTransfers.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary px-1">
+                      Completed — {completedTransfers.length} file{completedTransfers.length > 1 ? 's' : ''}
+                    </p>
+                    {completedTransfers.map((item) => {
+                      const isMine = item.sender === 'me';
+                      const isError = item.status === 'error' || item.status === 'canceled';
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex flex-col rounded-xl px-4 py-3 transition-all ${
+                            isError
+                              ? 'bg-brand-danger/5 border border-brand-danger/10'
+                              : 'bg-bg-primary dark:bg-bg-secondary border border-border-secondary dark:border-border-primary'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`shrink-0 rounded-lg p-2 ${
+                              isError ? 'bg-brand-danger/10' : isMine ? 'bg-brand-primary/10' : 'bg-brand-success/10'
+                            }`}>
+                              {isError ? (
+                                <svg className="h-4 w-4 text-brand-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              ) : (
+                                <svg className={`h-4 w-4 ${isMine ? 'text-brand-primary' : 'text-brand-success'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                            
+                            <div className="flex gap-2 min-w-0 flex-1">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between">
+                                  <p className="truncate text-sm font-medium text-text-primary">{item.name}</p>
+                                  <span className="text-[10px] text-text-secondary ml-2">{formatTime(item.timestamp)}</span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs text-text-secondary">{formatSize(item.size)}</span>
+                                  <span className="text-xs text-text-secondary">·</span>
+                                  <span className={`text-xs font-medium ${
+                                    isError ? 'text-brand-danger' : (item.status === 'paused' ? 'text-brand-warning' : (isMine ? 'text-brand-primary capitalize' : 'text-brand-success capitalize'))
+                                  }`}>
+                                    {item.status === 'sent' ? 'Sent ↑'
+                                      : item.status === 'received' ? 'Received ↓'
+                                      : item.status === 'error' ? 'Failed — Wait and retry'
+                                      : item.status === 'canceled' ? 'Canceled'
+                                      : item.status}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {/* Resume or Pause actions for active transfers */}
+                              {['sending', 'queued'].includes(item.status) && (
+                                <button
+                                  onClick={() => pauseFileTransfer(item.id)}
+                                  className="shrink-0 p-2 text-brand-warning hover:bg-brand-warning/10 rounded-full transition-colors self-center"
+                                  title="Pause Transfer"
+                                >
+                                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </button>
+                              )}
+                              
+                              {item.status === 'paused' && item.sender === 'me' && (
+                                <button
+                                  onClick={() => resumeFileTransfer(item.id)}
+                                  className="shrink-0 p-2 text-brand-success hover:bg-brand-success/10 rounded-full transition-colors self-center"
+                                  title="Resume Transfer"
+                                >
+                                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+
+                            {item.status === 'received' && item.blob && (
+                              <button
+                                draggable={!!item.blob}
+                                onDragStart={(e) => handleDragOutStart(e, item)}
+                                title="Click to download, or drag to desktop!"
+                                onClick={() => downloadFile(item)}
+                                className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-colors shadow-sm cursor-grab active:cursor-grabbing ${
+                                  item.downloaded
+                                    ? 'bg-bg-tertiary text-text-primary hover:bg-border-secondary'
+                                    : 'bg-brand-primary text-white hover:bg-brand-primary-hover'
+                                }`}
+                              >
+                                {item.downloaded ? 'Download Again ↓' : 'Download ↓'}
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Rich Media Preview */}
+                          {item.status === 'received' && item.blob && (
+                            <div className="ml-11">
+                               <MediaPreview blob={item.blob} mimeType={item.mimeType} name={item.name} />
+                            </div>
                           )}
-
-                          {msg.type === 'file' && (
-                            <FileBubble
-                              msg={msg}
-                              isMine={isMine}
-                              onDownload={downloadMsg}
-                              onPreview={(url) => setLightboxUrl(url)}
-                              onCancel={cancelQueuedFile}
-                              onDelete={handleDelete}
-                            />
-                          )}
-
-                          <p className={`mt-1 px-1 text-[10px] font-medium uppercase tracking-[0.18em] text-text-secondary w-full ${isMine ? 'text-right' : 'text-left'}`}>
-                            {new Date(msg.timestamp).toLocaleTimeString([], {
-                              hour: '2-digit', minute: '2-digit',
-                            })}
-                          </p>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                )}
 
-                  {peerTyping && <TypingIndicator />}
-                  <div ref={chatEndRef} />
-                </div>
+
               </div>
-
-              {errorMsg && (
-                <div className="shrink-0 border-t border-brand-danger/20 bg-brand-danger/5 px-4 py-2 text-center text-xs text-brand-danger">
-                  {errorMsg}
-                  <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
-                    Dismiss
-                  </button>
-                </div>
-              )}
-
-              <div className="shrink-0 px-3 py-2 sm:px-4 lg:px-5 bg-bg-secondary dark:bg-bg-tertiary">
-                <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
-                  {/* Send queue */}
-                  <SendQueue
-                    key={queueVersion}
-                    queue={pendingFilesRef.current.map(({ file, msgId }) => ({
-                      file, msgId,
-                      status: messages.find((m) => m.id === msgId)?.status || 'queued',
-                      progress: messages.find((m) => m.id === msgId)?.progress || 0,
-                    }))}
-                    onReorder={reorderQueue}
-                    onCancel={cancelFileTransfer}
-                  />
-
-                  {/* Chat input */}
-                  <ChatInput
-                    onSendText={handleSendText}
-                    onFilesAttach={handleFilesAttach}
-                    onTyping={sendTyping}
-                    replyingTo={replyingTo}
-                    onCancelReply={() => setReplyingTo(null)}
-                  />
-                </div>
-              </div>
-
-              {/* Whiteboard overlay */}
-              {showWhiteboard && (
-                <Whiteboard
-                  ref={whiteboardRef}
-                  onSendEvent={sendWhiteboardEvent}
-                  onClose={() => {
-                    setShowWhiteboard(false);
-                    sendWhiteboardEvent({ kind: 'wb-close' });
-                    sendPresenceEvent('whiteboard-close');
-                  }}
-                />
-              )}
-
             </div>
 
-            {dragDepth > 0 && (
-              <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-bg-tertiary/10 p-5 backdrop-blur-[2px] dark:bg-bg-tertiary/30"
-                onDragOver={(e) => e.preventDefault()}
-                onDragLeave={(e) => {
-                  // Only dismiss when truly leaving the viewport
-                  if (e.relatedTarget === null || !document.documentElement.contains(e.relatedTarget)) {
-                    setDragDepth(0);
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation(); // Prevent main's onDrop from double-processing
-                  handleDropFiles(e);  // Delegate to main handler which handles both plain files and folder modal
-                }}
-              >
-                <div className="w-full max-w-2xl">
-                  <FileDropZone onFilesSelect={handleFilesAttach} disabled={false} />
-                </div>
+            {errorMsg && (
+              <div className="shrink-0 border-t border-brand-danger/20 bg-brand-danger/5 px-4 py-2 text-center text-xs text-brand-danger">
+                {errorMsg}
+                <button onClick={() => setErrorMsg('')} className="ml-3 underline opacity-70">
+                  Dismiss
+                </button>
               </div>
             )}
+
+
 
             {/* Folder zip confirmation modal */}
             {folderZipItems && (
@@ -1428,29 +1157,11 @@ export default function Home() {
                 onCancel={handleFolderZipCancel}
               />
             )}
-
-            {/* Media Gallery Sidebar - Fixed on Right */}
-            {showMediaGallery && (
-              <>
-                {/* Backdrop Overlay */}
-                <div 
-                  className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] animate-in fade-in duration-300"
-                  onClick={() => setShowMediaGallery(false)}
-                />
-                <div className="fixed inset-y-0 right-0 z-50 flex shadow-2xl w-112.5 max-w-[95vw]">
-                  <MediaGallery 
-                    messages={messages} 
-                    onClose={() => setShowMediaGallery(false)} 
-                    onDownload={downloadMsg}
-                    onScrollTo={scrollToMessage}
-                  />
-                </div>
-              </>
-            )}
           </div>
         )}
 
-        {!chatReady && (
+        {/* ══════  PRE-CONNECTION VIEW  ══════ */}
+        {!isConnected && (
           <div className="relative flex flex-1 flex-col overflow-hidden">
             <div className="flex-1 w-full flex flex-col p-4 sm:p-6">
 
@@ -1537,15 +1248,15 @@ export default function Home() {
                       </div>
                     </div>
                     <h1 className="text-2xl font-bold text-text-primary dark:text-text-primary">
-                      {pendingInvite 
-                        ? `Waiting for ${pendingInvite.toNick}...` 
+                      {pendingInvite
+                        ? `Waiting for ${pendingInvite.toNick}...`
                         : (rtcState === 'connecting' || rtcState === 'checking' || status === 'waiting')
                           ? `Connecting to ${peerNickname || 'peer'}...`
                           : 'Establishing Connection'}
                     </h1>
                     <p className="mt-3 text-base text-text-secondary dark:text-text-secondary">
-                      {pendingInvite 
-                        ? 'Waiting for peer to accept the connection.' 
+                      {pendingInvite
+                        ? 'Waiting for peer to accept the connection.'
                         : (rtcState === 'connecting' || rtcState === 'checking' || (status === 'waiting' && mode === 'receive'))
                           ? 'Setting up secure P2P connection...'
                           : 'Waiting for peer to join the secure session...'}
@@ -1575,42 +1286,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* ══════  LIGHTBOX  ══════ */}
-        {lightboxUrl && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <button
-              className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/25 transition-colors"
-              onClick={() => setLightboxUrl(null)}
-              aria-label="Close preview"
-            >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <img
-              src={lightboxUrl}
-              alt="Full size preview"
-              className="max-h-[90vh] max-w-full rounded-2xl object-contain shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
-
         {/* ══════  TOASTS  ══════ */}
         <div className="pointer-events-none fixed right-4 top-4 z-60 flex w-[min(92vw,360px)] flex-col gap-2">
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-bg-tertiary/10 backdrop-blur ${toast.tone === 'message'
-                  ? 'border-brand-primary/20 bg-brand-primary/5 text-brand-primary dark:border-brand-primary/30 dark:bg-brand-primary/10 dark:text-brand-primary'
-                  : toast.tone === 'navigation'
+              className={`rounded-xl border px-4 py-3 text-sm shadow-lg shadow-bg-tertiary/10 backdrop-blur ${toast.tone === 'session'
+                  ? 'border-brand-success/20 bg-brand-success/5 text-brand-success dark:border-brand-success/30 dark:bg-brand-success/10 dark:text-brand-success'
+                  : toast.tone === 'warning'
                     ? 'border-brand-warning/20 bg-brand-warning/5 text-brand-warning'
-                    : toast.tone === 'session'
-                      ? 'border-brand-success/20 bg-brand-success/5 text-brand-success dark:border-brand-success/30 dark:bg-brand-success/10 dark:text-brand-success'
-                      : 'border-border-secondary bg-bg-primary/95 text-text-primary dark:border-border-primary dark:bg-bg-secondary/95 dark:text-text-primary'
+                    : 'border-border-secondary bg-bg-primary/95 text-text-primary dark:border-border-primary dark:bg-bg-secondary/95 dark:text-text-primary'
                 }`}
             >
               {toast.text}
@@ -1620,7 +1305,7 @@ export default function Home() {
 
       </main>
 
-      {/* Incoming Invite Overlay (Fixed to Viewport) */}
+      {/* Incoming Invite Overlay */}
       {incomingInvite && (
         <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-sm rounded-3xl border border-border-secondary bg-bg-secondary p-8 shadow-2xl dark:border-border-primary dark:bg-bg-secondary">
@@ -1637,10 +1322,10 @@ export default function Home() {
                 <span className="absolute inset-0 h-full w-full animate-ping rounded-full bg-brand-primary/20" />
               </div>
               <h3 className="text-xl font-bold text-text-primary dark:text-text-primary">
-                Incoming Invite
+                Incoming File Share
               </h3>
               <p className="mt-2 text-center text-sm text-text-secondary dark:text-text-secondary/80">
-                <span className="font-bold text-text-primary dark:text-text-primary">{incomingInvite.fromNick}</span> wants to start a secure session with you.
+                <span className="font-bold text-text-primary dark:text-text-primary">{incomingInvite.fromNick}</span> wants to share files with you.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">

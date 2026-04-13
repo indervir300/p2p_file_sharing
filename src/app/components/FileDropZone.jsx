@@ -84,9 +84,9 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
         </svg>
       </div>
       <p className="font-semibold text-text-primary dark:text-text-primary">
-        {dragging ? 'Release to add to chat' : 'Drop files or folders here'}
+        {dragging ? 'Release to send' : 'Drop files or folders here'}
       </p>
-      <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary">Files queue instantly · Folders are auto-zipped 📦</p>
+      <p className="mt-1 text-sm text-text-secondary dark:text-text-secondary">Or click to browse your files</p>
     </div>
   );
 }

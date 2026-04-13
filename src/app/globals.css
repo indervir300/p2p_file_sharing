@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import 'highlight.js/styles/atom-one-dark.min.css';
 
 /* Class-based dark mode — only activates when .dark is on <html> */
 @variant dark (&:where(.dark, .dark *));
