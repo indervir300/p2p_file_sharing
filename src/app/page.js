@@ -377,7 +377,7 @@ export default function Home() {
     }
   }, [status, pushToast, getStoredSession]);
 
-  const { send, wsState } = useSignaling(handleSignal, handleSignalingConnectionChange);
+  const { send, wsState, waitForBufferDrain } = useSignaling(handleSignal, handleSignalingConnectionChange);
 
   useEffect(() => {
     if (nickname && wsState === 'connected') {
@@ -399,6 +399,7 @@ export default function Home() {
   } = useWebRTC({
     onSignal: ({ type, payload }) => send({ type, payload }),
     wsSend: send,
+    waitForRelayDrain: waitForBufferDrain,
 
     onPresence: (message) => {
       switch (message.type) {

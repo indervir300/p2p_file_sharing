@@ -82,6 +82,24 @@ export function useSignaling(onMessage, onConnectionChange) {
     }
   }, []);
 
+  // Wait until the outgoing WS buffer drains below threshold, so a fast
+  // sender can't flood the (often resource-limited) signaling/relay server.
+  const waitForBufferDrain = useCallback((threshold = 256 * 1024) => {
+    const ws = wsRef.current;
+    if (!ws || ws.bufferedAmount <= threshold) return Promise.resolve();
+    return new Promise((resolve) => {
+      const check = () => {
+        const current = wsRef.current;
+        if (!current || current.readyState !== WebSocket.OPEN || current.bufferedAmount <= threshold) {
+          resolve();
+        } else {
+          setTimeout(check, 30);
+        }
+      };
+      check();
+    });
+  }, []);
+
   const reconnect = useCallback(() => {
     retryCount.current = 0;
     clearTimeout(retryTimer.current);
@@ -89,5 +107,5 @@ export function useSignaling(onMessage, onConnectionChange) {
     connect();
   }, [connect]);
 
-  return { send, wsState, reconnect };
+  return { send, wsState, reconnect, waitForBufferDrain };
 }

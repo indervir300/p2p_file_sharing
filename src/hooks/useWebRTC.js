@@ -27,6 +27,7 @@ export function useWebRTC({
   encryptChunk,
   decryptChunk,
   wsSend,
+  waitForRelayDrain,
 }) {
   const pcRef             = useRef(null);
   const dcRef             = useRef(null);
@@ -103,6 +104,9 @@ export function useWebRTC({
       }
 
       if (isRelayMode.current) {
+        // Don't outrun the signaling server's outgoing socket buffer — it's a
+        // single shared, resource-limited process relaying for every room.
+        if (waitForRelayDrain) await waitForRelayDrain();
         const rawChunk = buffer.slice(offset, offset + CHUNK_SIZE);
         let encoded;
         if (encryptChunk) {
