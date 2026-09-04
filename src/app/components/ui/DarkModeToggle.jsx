@@ -13,7 +13,7 @@ export default function DarkModeToggle() {
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       whileHover={{ scale: 1.04 }}
       whileTap={{ scale: 0.94 }}
-      className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-border-secondary bg-bg-primary/60 text-text-secondary transition-colors hover:text-brand-primary dark:border-border-primary dark:bg-bg-secondary/50"
+      className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-secondary bg-bg-primary/60 text-text-secondary transition-colors hover:text-brand-primary sm:h-9 sm:w-9 dark:border-border-primary dark:bg-bg-secondary/50"
     >
       <motion.span
         key={isDark ? 'sun' : 'moon'}

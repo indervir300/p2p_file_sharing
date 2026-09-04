@@ -1,8 +1,9 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Radar, Send } from 'lucide-react';
 import Avatar from '@/app/components/ui/Avatar';
+import { useIsCompact } from '@/hooks/useMediaQuery';
 
 /**
  * Spread peers over one or two rings so avatars and labels never collide.
@@ -45,14 +46,7 @@ function layoutPeers(peers) {
  */
 const DiscoveryNetwork = ({ peers = [], onConnect, nickname = 'You', busy = false }) => {
   // Nodes shrink on phones so a full ring still fits without overlapping.
-  const [compact, setCompact] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 639px)');
-    const apply = () => setCompact(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
+  const compact = useIsCompact();
 
   const peersWithPositions = useMemo(() => layoutPeers(peers), [peers]);
 
