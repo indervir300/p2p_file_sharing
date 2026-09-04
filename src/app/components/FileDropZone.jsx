@@ -1,88 +1,77 @@
 'use client';
 import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { UploadCloud, FolderUp, ShieldCheck, Infinity as InfinityIcon } from 'lucide-react';
 
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
+const HINTS = [
+  { Icon: ShieldCheck, label: 'End-to-end encrypted' },
+  { Icon: InfinityIcon, label: 'No size limit' },
+  { Icon: FolderUp, label: 'Folders auto-zipped' },
+];
 
-const FILE_ICONS = {
-  image: '🖼️',
-  video: '🎬',
-  audio: '🎵',
-  pdf: '📄',
-  zip: '📦',
-  text: '📝',
-  code: '💻',
-  default: '📁',
-};
-
-function getFileIcon(file) {
-  if (!file) return FILE_ICONS.default;
-  const type = file.type || '';
-  const name = file.name || '';
-  if (type.startsWith('image/')) return FILE_ICONS.image;
-  if (type.startsWith('video/')) return FILE_ICONS.video;
-  if (type.startsWith('audio/')) return FILE_ICONS.audio;
-  if (type === 'application/pdf' || name.endsWith('.pdf')) return FILE_ICONS.pdf;
-  if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return FILE_ICONS.zip;
-  if (/\.(txt|md|csv|log)$/i.test(name)) return FILE_ICONS.text;
-  if (/\.(js|ts|py|java|c|cpp|html|css|json|xml)$/i.test(name)) return FILE_ICONS.code;
-  return FILE_ICONS.default;
-}
-
-export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) {
+/**
+ * Primary drop target. The actual drop parsing happens on the page (folders vs files),
+ * this component owns the visual state and the file picker.
+ */
+export default function FileDropZone({ onFilesSelect, disabled, compact = false }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
+  const depth = useRef(0);
+
+  const handleDragEnter = (e) => {
+    if (disabled) return;
+    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+    depth.current += 1;
+    setDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    depth.current = Math.max(0, depth.current - 1);
+    if (depth.current === 0) setDragging(false);
+  };
 
   const handleDrop = (e) => {
     e.preventDefault();
+    depth.current = 0;
     setDragging(false);
   };
 
-  if (selectedFile) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-        className="rounded-2xl border border-border-secondary bg-bg-secondary/70 p-6 text-center shadow-sm backdrop-blur-sm"
-      >
-        <motion.div
-          className="text-5xl mb-4"
-          whileHover={{ scale: 1.1 }}
-          transition={{ type: 'spring', stiffness: 200 }}
-        >
-          {getFileIcon(selectedFile)}
-        </motion.div>
-        <p className="truncate font-semibold text-text-primary text-base">{selectedFile.name}</p>
-        <p className="mt-2 text-sm text-text-secondary">{formatSize(selectedFile.size)}</p>
-      </motion.div>
-    );
-  }
-
   return (
     <motion.div
+      onDragEnter={handleDragEnter}
       onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={() => !disabled && inputRef.current?.click()}
-      animate={{
-        scale: dragging ? 1.01 : 1,
-        boxShadow: dragging
-          ? 'var(--shadow-premium), 0 0 30px rgba(10, 102, 194, 0.2)'
-          : 'var(--shadow-md)',
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); }
       }}
-      className={`rounded-2xl border-2 border-dashed p-12 text-center cursor-pointer transition-all duration-200 backdrop-blur-sm
+      animate={{ scale: dragging ? 1.008 : 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      className={`group relative isolate cursor-pointer overflow-hidden rounded-3xl text-center transition-colors duration-200
+        ${compact ? 'px-6 py-8' : 'px-6 py-12 sm:py-14'}
         ${dragging
-          ? 'border-brand-primary bg-bg-primary/60 dark:bg-bg-secondary/60'
-          : 'border-border-secondary bg-bg-secondary/40 hover:border-brand-primary hover:bg-bg-secondary/60 dark:border-border-primary dark:bg-bg-secondary/30 dark:hover:bg-bg-secondary/50'
-        }
-        ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+          ? 'bg-brand-primary/[0.07]'
+          : 'bg-bg-primary/60 hover:bg-bg-primary/80 dark:bg-bg-secondary/40 dark:hover:bg-bg-secondary/60'}
+        ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+      style={{ boxShadow: dragging ? 'var(--shadow-glow), var(--shadow-lg)' : 'var(--shadow-sm)' }}
     >
+      {/* dashed border drawn as an overlay so it can animate colour independently */}
+      <span
+        className={`pointer-events-none absolute inset-0 -z-10 rounded-3xl border-2 border-dashed transition-colors duration-200
+          ${dragging
+            ? 'border-brand-primary'
+            : 'border-border-primary/70 group-hover:border-brand-primary/50 dark:border-border-primary'}`}
+      />
+
+      {/* soft radial wash on hover / drag */}
+      <span
+        className={`pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 ${dragging ? 'opacity-100' : 'group-hover:opacity-60'}`}
+        style={{ background: 'radial-gradient(50% 70% at 50% 0%, rgba(var(--brand-primary-rgb),0.14), transparent 70%)' }}
+      />
+
       <input
         ref={inputRef}
         type="file"
@@ -95,26 +84,42 @@ export default function FileDropZone({ onFilesSelect, disabled, selectedFile }) 
           e.target.value = '';
         }}
       />
+
       <motion.div
-        className={`mb-6 inline-flex h-20 w-20 items-center justify-center rounded-2xl border border-border-secondary bg-bg-primary/90 text-brand-primary shadow-md dark:border-border-primary dark:bg-bg-secondary`}
-        animate={dragging ? { scale: 1.15, y: -4 } : { scale: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        animate={dragging ? { y: -6, scale: 1.08 } : { y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 18 }}
+        className={`relative mx-auto mb-5 flex items-center justify-center rounded-2xl text-white shadow-lg
+          ${compact ? 'h-14 w-14' : 'h-16 w-16'} bg-gradient-brand`}
+        style={{ boxShadow: 'var(--shadow-glow)' }}
       >
-        <motion.svg
-          className="h-10 w-10"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          animate={dragging ? { y: -2 } : { y: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M12 12v9m0 0l-3-3m3 3l3-3" />
-        </motion.svg>
+        <UploadCloud className={compact ? 'h-6 w-6' : 'h-7 w-7'} strokeWidth={1.8} />
+        {dragging && (
+          <span className="absolute inset-0 -z-10 animate-ping rounded-2xl bg-brand-primary/40" />
+        )}
       </motion.div>
-      <p className="font-semibold text-text-primary text-lg mb-2">
-        {dragging ? 'Release to send' : 'Drop files or folders here'}
+
+      <p className={`font-bold tracking-tight text-text-primary ${compact ? 'text-base' : 'text-lg'}`}>
+        {dragging ? 'Release to beam it over' : 'Drop files or folders'}
       </p>
-      <p className="text-sm text-text-secondary">{disabled ? 'Transfer in progress' : 'Or click to browse your files'}</p>
+      <p className="mt-1 text-sm text-text-secondary">
+        {disabled ? 'Transfer in progress…' : (
+          <>or <span className="font-semibold text-brand-primary underline-offset-2 group-hover:underline">browse your device</span></>
+        )}
+      </p>
+
+      {!compact && (
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          {HINTS.map(({ Icon, label }) => (
+            <span
+              key={label}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border-secondary bg-bg-primary/70 px-2.5 py-1 text-[11px] font-medium text-text-secondary dark:border-border-primary dark:bg-bg-secondary/60"
+            >
+              <Icon className="h-3 w-3 text-brand-primary" strokeWidth={2.2} />
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }

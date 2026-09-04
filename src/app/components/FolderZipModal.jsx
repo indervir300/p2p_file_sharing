@@ -1,89 +1,82 @@
 'use client';
-
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
+import { motion } from 'framer-motion';
+import { FolderArchive, Check, X } from 'lucide-react';
+import { formatSize } from '@/utils/format';
 
 /**
- * Modal that appears when a folder is dropped.
- * Shows a simple progress while compressing, then lets the user send.
+ * Appears when a folder is dropped: shows compression progress, then lets the user send.
  */
 export default function FolderZipModal({ items, onSend, onCancel }) {
   if (!items || items.length === 0) return null;
 
   const allDone = items.every((i) => i.state === 'ready' || i.state === 'error');
   const hasReady = items.some((i) => i.state === 'ready');
+  const readyBytes = items.reduce((sum, i) => sum + (i.zipFile?.size || 0), 0);
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md"
       onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+      role="dialog"
+      aria-modal="true"
     >
-      <div className="w-full max-w-sm rounded-3xl border border-border-secondary bg-bg-secondary shadow-2xl dark:border-border-primary dark:bg-bg-secondary overflow-hidden">
-
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.97 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+        className="glass w-full max-w-sm overflow-hidden rounded-3xl border border-[var(--glass-border)] shadow-premium"
+      >
         {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-border-secondary dark:border-border-primary">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-primary/10 text-brand-primary">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="font-bold text-text-primary text-base">
-                {allDone ? 'Ready to send' : 'Preparing...'}
-              </h3>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {allDone
-                  ? `${items.length} ${items.length === 1 ? 'item' : 'items'} ready`
-                  : 'Compressing files…'}
-              </p>
-            </div>
+        <div className="flex items-center gap-3 border-b border-border-secondary px-5 py-4 dark:border-border-primary">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-primary/12 text-brand-primary">
+            <FolderArchive className="h-5 w-5" strokeWidth={1.9} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-text-primary">
+              {allDone ? 'Ready to send' : 'Packing folder…'}
+            </h3>
+            <p className="mt-0.5 text-[11px] text-text-tertiary">
+              {allDone
+                ? `${items.length} archive${items.length === 1 ? '' : 's'} · ${formatSize(readyBytes)}`
+                : 'Folders are zipped before transfer'}
+            </p>
           </div>
         </div>
 
-        {/* Items list */}
-        <div className="px-6 py-4 flex flex-col gap-3">
+        {/* Items */}
+        <div className="custom-scrollbar max-h-64 space-y-2 overflow-y-auto px-5 py-4">
           {items.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-3 rounded-2xl border border-border-secondary dark:border-border-primary bg-bg-primary dark:bg-bg-tertiary/50 px-4 py-3">
-
-              {/* Status icon */}
-              <div className="shrink-0">
+            <div
+              key={idx}
+              className="flex items-center gap-3 rounded-2xl border border-border-secondary bg-bg-primary/50 px-3.5 py-2.5 dark:border-border-primary dark:bg-bg-secondary/50"
+            >
+              <span className="shrink-0">
                 {item.state === 'zipping' && (
-                  <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
+                  <span className="block h-5 w-5 animate-spin rounded-full border-2 border-brand-primary border-t-transparent" />
                 )}
-                {item.state === 'ready' && (
-                  <svg className="h-5 w-5 text-brand-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {item.state === 'error' && (
-                  <svg className="h-5 w-5 text-brand-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-              </div>
+                {item.state === 'ready' && <Check className="h-5 w-5 text-brand-success" strokeWidth={2.6} />}
+                {item.state === 'error' && <X className="h-5 w-5 text-brand-danger" strokeWidth={2.6} />}
+              </span>
 
-              {/* Info */}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-text-primary">
                   {item.state === 'ready' ? `${item.name}.zip` : item.name}
                 </p>
-                <p className="text-xs text-text-secondary mt-0.5">
+                <p className="mt-0.5 text-[11px] text-text-tertiary">
                   {item.state === 'zipping' && 'Compressing…'}
                   {item.state === 'ready' && item.zipFile && formatSize(item.zipFile.size)}
-                  {item.state === 'error' && (item.error || 'Failed')}
+                  {item.state === 'error' && (item.error || 'Failed to compress')}
                 </p>
               </div>
 
-              {/* Per-item send button (only when multiple items and this one is ready) */}
               {items.length > 1 && item.state === 'ready' && item.zipFile && (
                 <button
                   onClick={() => onSend(item.zipFile)}
-                  className="shrink-0 rounded-full bg-brand-primary px-3 py-1 text-xs font-semibold text-white hover:bg-brand-primary-hover transition-colors"
+                  className="shrink-0 rounded-full bg-brand-primary/10 px-3 py-1 text-[11px] font-bold text-brand-primary transition-colors hover:bg-brand-primary/20"
                 >
                   Send
                 </button>
@@ -93,10 +86,10 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 pb-6 flex gap-3">
+        <div className="flex gap-3 px-5 pb-5">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-full border border-border-secondary py-2.5 text-sm font-semibold text-text-secondary hover:bg-bg-tertiary transition-colors dark:border-border-primary"
+            className="flex-1 rounded-full border border-border-secondary py-2.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary dark:border-border-primary"
           >
             Cancel
           </button>
@@ -109,17 +102,16 @@ export default function FolderZipModal({ items, onSend, onCancel }) {
                   if (item.state === 'ready' && item.zipFile) onSend(item.zipFile);
                 });
               }}
-              className={`flex-1 rounded-full py-2.5 text-sm font-semibold text-white transition-colors shadow-md
+              className={`flex-1 rounded-full py-2.5 text-sm font-semibold text-white shadow-md transition-transform
                 ${allDone
-                  ? 'bg-brand-primary hover:bg-brand-primary-hover shadow-brand-primary/20 cursor-pointer'
-                  : 'bg-brand-primary/50 cursor-not-allowed'
-                }`}
+                  ? 'bg-gradient-brand shadow-brand-primary/25 hover:scale-[1.02] active:scale-95'
+                  : 'cursor-not-allowed bg-brand-primary/50'}`}
             >
-              {!allDone ? 'Preparing…' : 'Send'}
+              {allDone ? 'Send all' : 'Preparing…'}
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
