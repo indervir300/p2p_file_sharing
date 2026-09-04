@@ -1,7 +1,7 @@
 'use client';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Sparkles, Activity, PanelRight, Zap, UploadCloud, PencilLine, ShieldCheck, Vault, X } from 'lucide-react';
+import { Sparkles, Activity, PanelRight, Zap, UploadCloud, PencilLine, ShieldCheck, X } from 'lucide-react';
 
 import { useSignaling } from '@/hooks/useSignaling';
 import { useWebRTC } from '@/hooks/useWebRTC';
@@ -1000,7 +1000,7 @@ export default function Home() {
   return (
     <>
       <main
-        className="aurora min-h-[100dvh] bg-bg-canvas"
+        className="min-h-[100dvh] bg-bg-canvas"
         onDragOver={handleDragOver}
         onDragEnter={handleWindowDragEnter}
         onDragLeave={handleWindowDragLeave}
@@ -1167,9 +1167,6 @@ export default function Home() {
             {/* Brand bar */}
             <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:px-6">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-brand text-white shadow-md" style={{ boxShadow: 'var(--shadow-glow)' }}>
-                  <Vault className="h-4.5 w-4.5" strokeWidth={2} />
-                </span>
                 <div className="leading-tight">
                   <p className="text-sm font-bold tracking-tight text-text-primary">Vault Drop</p>
                   <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-text-tertiary">
