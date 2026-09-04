@@ -1,8 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Inbox, Send, Layers, CloudDownload, Zap, MousePointerClick } from 'lucide-react';
-import Switch from '@/app/components/ui/Switch';
+import { X, Search, Inbox, Send, Layers, CloudDownload } from 'lucide-react';
 import TransferRow from './TransferRow';
 import { formatSize } from '@/utils/format';
 
@@ -35,8 +34,6 @@ export default function TransferPanel({
   items,
   onDownload,
   onDragOut,
-  autoDownload,
-  onAutoDownloadChange,
   onDownloadAll,
 }) {
   const [query, setQuery] = useState('');
@@ -66,6 +63,11 @@ export default function TransferPanel({
     [visible],
   );
 
+  const totalSession = useMemo(
+    () => items.reduce((sum, t) => sum + (t.size || 0), 0),
+    [items],
+  );
+
   if (!open) return null;
 
   return (
@@ -89,24 +91,22 @@ export default function TransferPanel({
         aria-label="Transfer activity"
       >
         {/* ── Header ── */}
-        <div className="flex items-center justify-between gap-3 border-b border-border-secondary px-4 py-3.5 dark:border-border-primary">
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold tracking-tight text-text-primary">Activity</h2>
-            <p className="mt-0.5 text-[11px] text-text-tertiary">
-              {counts.all} {counts.all === 1 ? 'item' : 'items'} · {formatSize(items.reduce((s, t) => s + (t.size || 0), 0))} this session
-            </p>
-          </div>
+        <div className="flex items-center gap-2 border-b border-border-secondary px-3 py-2 dark:border-border-primary">
+          <h2 className="shrink-0 text-[13px] font-bold tracking-tight text-text-primary">Activity</h2>
+          <span className="truncate text-[11px] text-text-tertiary">
+            {counts.all} {counts.all === 1 ? 'item' : 'items'} · {formatSize(totalSession)}
+          </span>
           <button
             onClick={onClose}
             title="Hide panel"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
           >
             <X className="h-4 w-4" strokeWidth={2.2} />
           </button>
         </div>
 
         {/* ── Tabs ── */}
-        <div className="px-3 pt-3">
+        <div className="px-3 pt-2.5">
           <div className="flex gap-1 rounded-xl bg-bg-tertiary/70 p-1">
             {TABS.map(({ id, label, Icon }) => {
               const active = tab === id;
@@ -137,37 +137,9 @@ export default function TransferPanel({
           </div>
         </div>
 
-        {/* ── Auto-download control ── */}
-        <div className="px-3 pt-3">
-          <div className={`flex items-center gap-3 rounded-xl border p-3 transition-colors
-            ${autoDownload
-              ? 'border-brand-primary/25 bg-brand-primary/[0.06]'
-              : 'border-border-secondary bg-bg-primary/40 dark:border-border-primary'}`}>
-            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${autoDownload ? 'bg-brand-primary/12 text-brand-primary' : 'bg-bg-tertiary text-text-secondary'}`}>
-              {autoDownload ? <Zap className="h-4 w-4" strokeWidth={2.2} /> : <MousePointerClick className="h-4 w-4" strokeWidth={2} />}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-text-primary">
-                {autoDownload ? 'Auto-download on' : 'Manual download'}
-              </p>
-              <p className="mt-0.5 text-[11px] leading-snug text-text-tertiary">
-                {autoDownload
-                  ? 'Incoming files save to your device automatically.'
-                  : 'You choose which incoming files to save.'}
-              </p>
-            </div>
-            <Switch
-              checked={autoDownload}
-              onChange={onAutoDownloadChange}
-              label="Auto-download incoming files"
-              size="sm"
-            />
-          </div>
-        </div>
-
         {/* ── Search ── */}
         {items.length > 4 && (
-          <div className="px-3 pt-3">
+          <div className="px-3 pt-2.5">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-tertiary" strokeWidth={2} />
               <input
@@ -181,7 +153,7 @@ export default function TransferPanel({
         )}
 
         {/* ── List ── */}
-        <div className="custom-scrollbar mt-3 flex-1 space-y-2 overflow-y-auto px-3 pb-4">
+        <div className="custom-scrollbar mt-2.5 flex-1 space-y-2 overflow-y-auto px-3 pb-4">
           <AnimatePresence initial={false} mode="popLayout">
             {visible.map((item) => (
               <TransferRow

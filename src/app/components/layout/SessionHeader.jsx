@@ -83,18 +83,18 @@ export default function SessionHeader({
           </span>
         </div>
 
-        {/* Auto-download quick switch */}
+        {/* Auto-download quick switch — the only place this lives */}
         <div
-          className={`hidden items-center gap-2 rounded-full border py-1.5 pl-2.5 pr-2 transition-colors sm:flex
+          className={`flex items-center gap-1.5 rounded-full border py-1.5 pl-2 pr-2 transition-colors sm:gap-2 sm:pl-2.5
             ${autoDownload
               ? 'border-brand-primary/30 bg-brand-primary/[0.07]'
               : 'border-border-secondary bg-bg-primary/60 dark:border-border-primary dark:bg-bg-secondary/50'}`}
           title={autoDownload
-            ? 'Auto-download is on — incoming files save automatically'
-            : 'Manual mode — you pick which files to save'}
+            ? 'Auto-download is on — incoming files save to your device automatically'
+            : 'Manual download — you pick which incoming files to save'}
         >
-          <Zap className={`h-3.5 w-3.5 ${autoDownload ? 'text-brand-primary' : 'text-text-tertiary'}`} strokeWidth={2.4} />
-          <span className={`text-[11px] font-bold uppercase tracking-wide ${autoDownload ? 'text-brand-primary' : 'text-text-tertiary'}`}>
+          <Zap className={`h-3.5 w-3.5 shrink-0 ${autoDownload ? 'text-brand-primary' : 'text-text-tertiary'}`} strokeWidth={2.4} />
+          <span className={`hidden text-[11px] font-bold uppercase tracking-wide sm:inline ${autoDownload ? 'text-brand-primary' : 'text-text-tertiary'}`}>
             Auto
           </span>
           <Switch checked={autoDownload} onChange={onAutoDownloadChange} label="Auto-download incoming files" size="sm" />

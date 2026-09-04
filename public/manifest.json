@@ -1,11 +1,11 @@
 {
-  "name": "Antigravity — P2P File Sharing",
-  "short_name": "Antigravity",
+  "name": "Vault Drop — Encrypted P2P File Transfer",
+  "short_name": "Vault Drop",
   "description": "Transfer files directly between devices with end-to-end encryption. No cloud, no limits.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#0969da",
+  "theme_color": "#4f46e5",
   "orientation": "portrait",
   "icons": [
     {

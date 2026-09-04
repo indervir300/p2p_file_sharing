@@ -1,7 +1,7 @@
 'use client';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Sparkles, Activity, PanelRight, Zap, UploadCloud, PencilLine, ShieldCheck, X } from 'lucide-react';
+import { Sparkles, Activity, PanelRight, Zap, UploadCloud, PencilLine, ShieldCheck, Vault, X } from 'lucide-react';
 
 import { useSignaling } from '@/hooks/useSignaling';
 import { useWebRTC } from '@/hooks/useWebRTC';
@@ -1111,14 +1111,13 @@ export default function Home() {
                     </button>
                   )}
 
-                  {/* Auto-download hint on small screens where the header switch is hidden */}
-                  <div className="flex items-center justify-center gap-1.5 pt-1 text-[11px] text-text-tertiary sm:hidden">
+                  {/* Current download mode — the switch itself lives in the header */}
+                  <p className="flex items-center justify-center gap-1.5 pt-1 text-[11px] text-text-tertiary">
                     <Zap className={`h-3 w-3 ${autoDownload ? 'text-brand-primary' : ''}`} strokeWidth={2.4} />
-                    {autoDownload ? 'Auto-download is on' : 'Manual download'} ·{' '}
-                    <button onClick={() => openPanelTo('received')} className="font-semibold text-brand-primary">
-                      change
-                    </button>
-                  </div>
+                    {autoDownload
+                      ? 'Incoming files save to your device automatically'
+                      : 'Incoming files wait for you to save them'}
+                  </p>
                 </div>
               </div>
 
@@ -1133,8 +1132,6 @@ export default function Home() {
                     items={completedTransfers}
                     onDownload={downloadFile}
                     onDragOut={handleDragOutStart}
-                    autoDownload={autoDownload}
-                    onAutoDownloadChange={setAutoDownloadPref}
                     onDownloadAll={downloadAllPending}
                   />
                 )}
@@ -1171,12 +1168,12 @@ export default function Home() {
             <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:px-6">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-brand text-white shadow-md" style={{ boxShadow: 'var(--shadow-glow)' }}>
-                  <UploadCloud className="h-4.5 w-4.5" strokeWidth={2} />
+                  <Vault className="h-4.5 w-4.5" strokeWidth={2} />
                 </span>
                 <div className="leading-tight">
-                  <p className="text-sm font-bold tracking-tight text-text-primary">Antigravity</p>
+                  <p className="text-sm font-bold tracking-tight text-text-primary">Vault Drop</p>
                   <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-text-tertiary">
-                    Peer-to-peer transfer
+                    Encrypted P2P transfer
                   </p>
                 </div>
               </div>

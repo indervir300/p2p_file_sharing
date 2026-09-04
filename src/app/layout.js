@@ -5,27 +5,27 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata = {
-  title: 'Antigravity — P2P File Sharing',
+  title: 'Vault Drop — Encrypted P2P File Transfer',
   description: 'Transfer files directly between devices with end-to-end encryption. No cloud storage, no file size limits.',
-  keywords: ['file sharing', 'p2p', 'peer to peer', 'encrypted', 'webrtc'],
+  keywords: ['file sharing', 'p2p', 'peer to peer', 'encrypted', 'secure file transfer', 'webrtc'],
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Antigravity',
+    title: 'Vault Drop',
   },
   formatDetection: {
     telephone: false,
   },
   openGraph: {
-    title: 'Antigravity — P2P File Sharing',
+    title: 'Vault Drop — Encrypted P2P File Transfer',
     description: 'Transfer files directly between devices with end-to-end encryption. No cloud, no limits.',
     type: 'website',
   },
 };
 
 export const viewport = {
-  themeColor: '#0a66c2',
+  themeColor: '#4f46e5',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
